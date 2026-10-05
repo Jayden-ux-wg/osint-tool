@@ -13,17 +13,10 @@ from datetime import datetime
 
 # --- STREAMLIT PAGE CONFIG ---
 st.set_page_config(
-    page_title="Stealth OSINT Engine v6.0 Ultimate",
+    page_title="Stealth OSINT Engine v7.0 Ultimate",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
-)
-
-# --- HIER GEHÖRT DER PASSWORT-SCHUTZ HIN ---
-password = st.sidebar.text_input("🔒 Enter Access Key:", type="password")
-if password != "DeinGeheimesPasswort123":  # Hier dein eigenes Passwort eintragen
-    st.warning("⚠️ Bitte gib das richtige Passwort ein, um die Engine zu entsperren.")
-    st.stop()  # Stoppt die Ausführung sofort, sodass man ohne Passwort nichts sieht!
 )
 
 # --- DARK ULTIMATE STYLING ---
@@ -44,7 +37,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
 ]
 
-# --- PLATFORM DATABASE ---
+# --- PLATFORM DATABASE (ERWEITERT) ---
 PLATFORMS_DB = {
     "Social & Networks": {
         "GitHub": "https://github.com/{}",
@@ -104,7 +97,11 @@ PLATFORMS_DB = {
         "DeviantArt": "https://www.deviantart.com/{}",
         "Bandcamp": "https://bandcamp.com/{}",
         "Vimeo": "https://vimeo.com/{}",
-        "Flickr": "https://www.flickr.com/people/{}"
+        "Flickr": "https://www.flickr.com/people/{}",
+        "Behance": "https://www.behance.net/{}",
+        "Dribbble": "https://dribbble.com/{}",
+        "Substack": "https://{}.substack.com",
+        "Wattpad": "https://www.wattpad.com/user/{}"
     }
 }
 
@@ -173,7 +170,6 @@ async def run_osint_scan(targets, query, max_concurrent, timeout_sec, proxy_url)
         return clean_results
 
 def execute_async_in_thread(coro):
-    """Führt eine Async Koroutine isoliert in einem neuen Thread mit eigenem Event-Loop aus."""
     def worker():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -190,11 +186,11 @@ def execute_async_in_thread(coro):
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
 
-st.sidebar.title("⚡ Engine Config")
+st.sidebar.title("⚡ Engine Config v7.0")
 selected_categories = st.sidebar.multiselect("Kategorien:", options=list(PLATFORMS_DB.keys()), default=list(PLATFORMS_DB.keys()))
 proxy_input = st.sidebar.text_input("Optional Proxy (z.B. http://proxy:8080):", value="")
 
-max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=30, value=15)
+max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=40, value=20)
 request_timeout = st.sidebar.slider("Timeout (Sek.)", min_value=2, max_value=10, value=4)
 
 active_targets = []
@@ -202,7 +198,7 @@ for cat in selected_categories:
     for name, url in PLATFORMS_DB[cat].items():
         active_targets.append((name, cat, url))
 
-st.title("⚡ Stealth OSINT Engine v6.0 Ultimate")
+st.title("⚡ Stealth OSINT Engine v7.0 Ultimate")
 st.markdown("Advanced Multi-Target Intelligence Dashboard & Deep Entity Extraction.")
 
 raw_input = st.text_input("Ziel-Benutzername oder E-Mails (kommagetrennt für Massen-Scan):", placeholder="z.B. alex123, target@domain.com")
@@ -215,27 +211,35 @@ if start_scan:
         targets_list = [t.strip() for t in raw_input.split(",") if t.strip()]
         all_results = []
         
-        with st.spinner("Scanne Plattformen im Hintergrund... Bitte warten..."):
-            start_time = time.time()
-
-            for t in targets_list:
-                search_handle = t.split('@')[0] if "@" in t else t
-                
-                # Absturzsichere Ausführung im separaten Thread
-                res = execute_async_in_thread(
-                    run_osint_scan(
-                        active_targets, 
-                        search_handle, 
-                        max_threads, 
-                        request_timeout, 
-                        proxy_input if proxy_input else None
-                    )
-                )
-                all_results.extend(res)
-            
-            st.session_state["scan_results"] = all_results
-            st.session_state["scan_time"] = round(time.time() - start_time, 2)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
+        start_time = time.time()
+        total_steps = len(targets_list) * len(active_targets)
+        current_step = 0
+
+        for t in targets_list:
+            search_handle = t.split('@')[0] if "@" in t else t
+            status_text.text(f"Scanne Ziel: {search_handle}...")
+            
+            res = execute_async_in_thread(
+                run_osint_scan(
+                    active_targets, 
+                    search_handle, 
+                    max_threads, 
+                    request_timeout, 
+                    proxy_input if proxy_input else None
+                )
+            )
+            all_results.extend(res)
+            current_step += len(active_targets)
+            progress_bar.progress(min(1.0, current_step / total_steps))
+        
+        progress_bar.empty()
+        status_text.empty()
+
+        st.session_state["scan_results"] = all_results
+        st.session_state["scan_time"] = round(time.time() - start_time, 2)
         st.success(f"Scan in {st.session_state['scan_time']}s erfolgreich beendet!")
 
 if st.session_state["scan_results"]:
@@ -252,7 +256,7 @@ if st.session_state["scan_results"]:
     m3.metric("🎯 Digital Exposure Score", f"{score}/100")
     m4.metric("⏱️ Scan-Zeit", f"{st.session_state.get('scan_time', 0)}s")
 
-    tab_found, tab_dorks, tab_export = st.tabs(["🎯 Profil-Karten & Meta-Daten", "🔎 Multi-Engine Dorks", "💾 Report Export"])
+    tab_found, tab_stats, tab_dorks, tab_export = st.tabs(["🎯 Profil-Karten & Meta", "📊 Kategorien-Statistik", "🔎 Multi-Engine Dorks", "💾 Report Export"])
 
     with tab_found:
         filter_text = st.text_input("🔍 Ergebnisse live filtern:", "")
@@ -280,6 +284,19 @@ if st.session_state["scan_results"]:
                         st.markdown(f"🌐 **Ethereum Wallets:** {', '.join(meta['eth_wallets'])}")
                 st.markdown("---")
 
+    with tab_stats:
+        st.markdown("### Treffer nach Kategorien")
+        cat_counts = {}
+        for item in found_list:
+            cat = item["category"]
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        
+        if cat_counts:
+            for cat, count in cat_counts.items():
+                st.markdown(f"- **{cat}:** {count} Treffer")
+        else:
+            st.info("Keine Treffer für Statistiken vorhanden.")
+
     with tab_dorks:
         st.markdown("### Multi-Engine Dork Generator")
         q_enc = quote(raw_input)
@@ -301,7 +318,7 @@ if st.session_state["scan_results"]:
         col_csv.download_button(
             label="📄 CSV herunterladen",
             data=csv_buffer.getvalue(),
-            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"osint_v7_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
         
@@ -310,6 +327,6 @@ if st.session_state["scan_results"]:
         col_json.download_button(
             label="📦 JSON herunterladen",
             data=json_data,
-            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.json",
+            file_name=f"osint_v7_{datetime.now().strftime('%Y%m%d')}.json",
             mime="application/json"
         )
