@@ -10,6 +10,13 @@ import time
 from urllib.parse import quote
 from datetime import datetime
 
+# --- NEST_ASYNCIO INTEGRATION (BEHEBT DAS HÄNGENBLEIBEN) ---
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except ImportError:
+    pass
+
 # --- STREAMLIT PAGE CONFIG ---
 st.set_page_config(
     page_title="Stealth OSINT Engine v6.0 Ultimate",
@@ -117,7 +124,7 @@ def extract_deep_entities(html_text):
     if img_match:
         metadata["image"] = img_match.group(1).strip()
 
-    # ENTITY REGEX EXTRATION
+    # ENTITY REGEX EXTRACTION
     metadata["btc_wallets"] = list(set(re.findall(r'\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b', html_text)))
     metadata["eth_wallets"] = list(set(re.findall(r'\b0x[a-fA-F0-9]{40}\b', html_text)))
     metadata["emails"] = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html_text)))
@@ -132,10 +139,10 @@ async def fetch_platform(session, name, category, url_template, query, timeout_s
         async with session.get(target_url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout_sec), allow_redirects=True, proxy=proxy_url) as response:
             status = response.status
             if status == 200:
-                text = await response.text()
+                text = await response.text(errors='ignore')
                 page_text = text.lower()
                 
-                not_found_indicators = ["not found", "does not exist", "user not found", "account not found", "error 404"]
+                not_found_indicators = ["not found", "does not exist", "user not found", "account not found", "error 404", "seite nicht gefunden"]
                 for indicator in not_found_indicators:
                     if indicator in page_text:
                         return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
@@ -146,11 +153,13 @@ async def fetch_platform(session, name, category, url_template, query, timeout_s
                 return {"name": name, "category": category, "url": target_url, "status": "BLOCKED", "code": status}
             else:
                 return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        return {"name": name, "category": category, "url": target_url, "status": "TIMEOUT"}
     except Exception:
         return {"name": name, "category": category, "url": target_url, "status": "ERROR"}
 
 async def run_osint_scan(targets, query, max_concurrent, timeout_sec, progress_bar, status_text, proxy_url):
-    connector = aiohttp.TCPConnector(limit=max_concurrent)
+    connector = aiohttp.TCPConnector(limit=max_concurrent, ssl=False)
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = [fetch_platform(session, name, cat, url, query, timeout_sec, proxy_url) for name, cat, url in targets]
         results = []
@@ -172,8 +181,8 @@ st.sidebar.title("⚡ Engine Config")
 selected_categories = st.sidebar.multiselect("Kategorien:", options=list(PLATFORMS_DB.keys()), default=list(PLATFORMS_DB.keys()))
 proxy_input = st.sidebar.text_input("Optional Proxy (z.B. http://proxy:8080):", value="")
 
-max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=50, value=30)
-request_timeout = st.sidebar.slider("Timeout (Sek.)", min_value=2, max_value=15, value=4)
+max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=30, value=15)
+request_timeout = st.sidebar.slider("Timeout (Sek.)", min_value=2, max_value=10, value=4)
 
 active_targets = []
 for cat in selected_categories:
@@ -196,15 +205,26 @@ if start_scan:
         status_text = st.empty()
         
         start_time = time.time()
+        
+        # SICHERE EVENT-LOOP-ABFRAGE FÜR STREAMLIT CLOUD
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
         for t in targets_list:
             search_handle = t.split('@')[0] if "@" in t else t
-            res = asyncio.run(run_osint_scan(active_targets, search_handle, max_threads, request_timeout, progress_bar, status_text, proxy_input if proxy_input else None))
+            res = loop.run_until_complete(
+                run_osint_scan(active_targets, search_handle, max_threads, request_timeout, progress_bar, status_text, proxy_input if proxy_input else None)
+            )
             all_results.extend(res)
         
         st.session_state["scan_results"] = all_results
         st.session_state["scan_time"] = round(time.time() - start_time, 2)
         progress_bar.empty()
         status_text.empty()
+        st.success(f"Scan in {st.session_state['scan_time']}s erfolgreich beendet!")
 
 if st.session_state["scan_results"]:
     results = st.session_state["scan_results"]
@@ -245,6 +265,8 @@ if st.session_state["scan_results"]:
                         st.markdown(f"📧 **Gefundene E-Mails:** {', '.join(meta['emails'])}")
                     if meta.get("btc_wallets"):
                         st.markdown(f"🪙 **Bitcoin Wallets:** {', '.join(meta['btc_wallets'])}")
+                    if meta.get("eth_wallets"):
+                        st.markdown(f"🌐 **Ethereum Wallets:** {', '.join(meta['eth_wallets'])}")
                 st.markdown("---")
 
     with tab_dorks:
@@ -255,5 +277,28 @@ if st.session_state["scan_results"]:
         st.markdown(f"- 🌐 **Yandex Global Search:** [Yandex Suche](https://yandex.com/search/?text=%22{q_enc}%22)")
 
     with tab_export:
+        col_csv, col_json = st.columns(2)
+        
+        # CSV Export
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["Name", "Kategorie", "Status", "URL", "Titel", "Description"])
+        for r in results:
+            meta = r.get("metadata", {})
+            writer.writerow([r["name"], r["category"], r["status"], r["url"], meta.get("title"), meta.get("description")])
+            
+        col_csv.download_button(
+            label="📄 CSV herunterladen",
+            data=csv_buffer.getvalue(),
+            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+        
+        # JSON Export
         json_data = json.dumps(results, indent=2, ensure_ascii=False)
-        st.download_button("📦 JSON Export herunterladen", json_data, f"osint_report_{datetime.now().strftime('%Y%m%d')}.json", "application/json")
+        col_json.download_button(
+            label="📦 JSON herunterladen",
+            data=json_data,
+            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json"
+        )
