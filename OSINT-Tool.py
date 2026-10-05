@@ -19,6 +19,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- HIER GEHÖRT DER PASSWORT-SCHUTZ HIN ---
+password = st.sidebar.text_input("🔒 Enter Access Key:", type="password")
+if password != "DeinGeheimesPasswort123":  # Hier dein eigenes Passwort eintragen
+    st.warning("⚠️ Bitte gib das richtige Passwort ein, um die Engine zu entsperren.")
+    st.stop()  # Stoppt die Ausführung sofort, sodass man ohne Passwort nichts sieht!
+)
+
 # --- DARK ULTIMATE STYLING ---
 st.markdown("""
     <style>
