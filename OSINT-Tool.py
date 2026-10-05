@@ -1,23 +1,34 @@
 import streamlit as st
 import requests
-import time
 import concurrent.futures
+import json
+import io
+import csv
+from datetime import datetime
 
-# --- DESIGN-ANPASSUNG (Hacker & Red Tiger Look) ---
+# --- STREAMLIT PAGE CONFIG ---
+st.set_page_config(
+    page_title="Stealth OSINT Engine",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- DESIGN-ANPASSUNG (Dark / Hacker Theme) ---
 st.markdown("""
     <style>
     .stApp {
-        background-color: #050505;
+        background-color: #080808;
         color: #00ff66;
         font-family: 'Courier New', Courier, monospace;
     }
     h1, h2, h3 {
         color: #ff2a2a !important;
         font-family: 'Courier New', Courier, monospace;
-        text-shadow: 0px 0px 10px rgba(255, 42, 42, 0.5);
+        text-shadow: 0px 0px 8px rgba(255, 42, 42, 0.4);
     }
     .stTextInput input {
-        background-color: #101010;
+        background-color: #121212;
         color: #00ff66;
         border: 1px solid #ff2a2a;
         font-family: 'Courier New', Courier, monospace;
@@ -30,691 +41,308 @@ st.markdown("""
         border: 1px solid #ff5555;
         font-family: 'Courier New', Courier, monospace;
         width: 100%;
+        padding: 0.6rem 1rem;
     }
     .stButton button:hover {
         background: linear-gradient(45deg, #ff5555, #ff2a2a);
         color: #fff;
         border: 1px solid #00ff66;
+        box-shadow: 0 0 10px rgba(0, 255, 102, 0.5);
     }
-    .stAlert {
-        background-color: #121212;
-        color: #00ff66;
-        border: 1px solid #00ff66;
+    div[data-testid="stMetricValue"] {
+        color: #00ff66 !important;
+        font-family: 'Courier New', Courier, monospace;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Die Plattformen (Massive OSINT Target Database)
-platforms = {
-    # --- Block 1: Social, Tech & Dev (1-100) ---
-    "GitHub": "https://github.com/{}",
-    "X (Twitter)": "https://twitter.com/{}",
-    "Reddit": "https://www.reddit.com/user/{}",
-    "Instagram": "https://www.instagram.com/{}",
-    "TikTok": "https://www.tiktok.com/@{}",
-    "Steam": "https://steamcommunity.com/id/{}",
-    "Twitch": "https://www.twitch.tv/{}",
-    "Pinterest": "https://pinterest.com/{}",
-    "SoundCloud": "https://soundcloud.com/{}",
-    "Chess.com": "https://www.chess.com/member/{}",
-    "Spotify": "https://open.spotify.com/user/{}",
-    "YouTube": "https://www.youtube.com/@{}",
-    "Medium": "https://medium.com/@{}",
-    "Vimeo": "https://vimeo.com/{}",
-    "Flickr": "https://www.flickr.com/photos/{}",
-    "Behance": "https://www.behance.net/{}",
-    "Dribbble": "https://dribbble.com/{}",
-    "DeviantArt": "https://www.deviantart.com/{}",
-    "Goodreads": "https://www.goodreads.com/{}",
-    "Telegram": "https://t.me/{}",
-    "HackerNews": "https://news.ycombinator.com/user?id={}",
-    "ProductHunt": "https://www.producthunt.com/@{}",
-    "Kaggle": "https://www.kaggle.com/{}",
-    "Codecademy": "https://www.codecademy.com/profiles/{}",
-    "Keybase": "https://keybase.io/{}",
-    "About.me": "https://about.me/{}",
-    "Disqus": "https://disqus.com/by/{}",
-    "SlideShare": "https://www.slideshare.net/{}",
-    "TripAdvisor": "https://www.tripadvisor.com/members/{}",
-    "Patreon": "https://www.patreon.com/{}",
-    "Ko-fi": "https://ko-fi.com/{}",
-    "BuyMeACoffee": "https://buymeacoffee.com/{}",
-    "Bandcamp": "https://bandcamp.com/{}",
-    "Mixcloud": "https://www.mixcloud.com/{}",
-    "Last.fm": "https://www.last.fm/user/{}",
-    "Strava": "https://www.strava.com/athletes/{}",
-    "Duolingo": "https://www.duolingo.com/profile/{}",
-    "Replit": "https://replit.com/@{}",
-    "GameJolt": "https://gamejolt.com/@{}",
-    "Wattpad": "https://www.wattpad.com/user/{}",
-    "LinkedIn": "https://www.linkedin.com/in/{}",
-    "Facebook": "https://www.facebook.com/{}",
-    "Snapchat": "https://www.snapchat.com/add/{}",
-    "Quora": "https://www.quora.com/profile/{}",
-    "Imgur": "https://imgur.com/user/{}",
-    "Mastodon": "https://mastodon.social/@{}",
-    "Substack": "https://substack.com/@{}",
-    "9GAG": "https://9gag.com/u/{}",
-    "Letterboxd": "https://letterboxd.com/{}",
-    "Lichess": "https://lichess.org/@/{}",
-    "OpenStreetMap": "https://www.openstreetmap.org/user/{}",
-    "Bitbucket": "https://bitbucket.org/{}",
-    "Canva": "https://www.canva.com/{}",
-    "DailyMotion": "https://www.dailymotion.com/{}",
-    "Foursquare": "https://foursquare.com/{}",
-    "Freelancer": "https://www.freelancer.com/u/{}",
-    "Gab": "https://gab.com/{}",
-    "Genius": "https://genius.com/{}",
-    "GIPHY": "https://giphy.com/{}",
-    "Gumroad": "https://gumroad.com/{}",
-    "Hackaday": "https://hackaday.io/{}",
-    "Launchpad": "https://launchpad.net/~{}",
-    "MySpace": "https://myspace.com/{}",
-    "Pinkbike": "https://www.pinkbike.com/u/{}",
-    "AniList": "https://anilist.co/user/{}",
-    "AllTrails": "https://www.alltrails.com/members/{}",
-    "Audiomack": "https://audiomack.com/{}",
-    "CouchSurfing": "https://www.couchsurfing.com/people/{}",
-    "CreativeMarket": "https://creativemarket.com/{}",
-    "Ello": "https://ello.co/{}",
-    "EyeEm": "https://www.eyeem.com/u/{}",
-    "Houzz": "https://www.houzz.com/pro/{}",
-    "Academia": "https://independent.academia.edu/{}",
-    "500px": "https://500px.com/{}",
-    "Clapper": "https://clapperapp.com/{}",
-    "Vero": "https://vero.co/{}",
-    "Rumble": "https://rumble.com/user/{}",
-    "Bitchute": "https://www.bitchute.com/accounts/profile/{}",
-    "Substar": "https://substar.app/{}",
-    "CashApp": "https://cash.app/${}",
-    "Venmo": "https://venmo.com/{}",
-    "Teespring": "https://teespring.com/stores/{}",
-    "Blogger": "https://{}.blogspot.com",
-    "WordPress": "https://{}.wordpress.com",
-    "Mix": "https://mix.com/{}",
-    "Trakt": "https://trakt.tv/users/{}",
-    "RateYourMusic": "https://rateyourmusic.com/~{}",
-    "Simetrik": "https://simetrik.com/{}",
-    "Tarragon": "https://tarragon.io/{}",
-    "Vivid": "https://vivid.cc/{}",
-    "Xing": "https://www.xing.com/profile/{}",
-    "Plurk": "https://www.plurk.com/{}",
-    "AngelList": "https://angel.co/u/{}",
-    "DevRant": "https://devrant.com/users/{}",
-    "Coroflot": "https://www.coroflot.com/{}",
-    "Crevado": "https://crevado.com/{}",
-
-    # --- Block 2: Gaming, Tracker & Communities (101-200) ---
-    "MyAnimeList": "https://myanimelist.net/profile/{}",
-    "Etsy": "https://www.etsy.com/people/{}",
-    "Vinted": "https://www.vinted.fr/member/{}",
-    "Xbox Profile": "https://account.xbox.com/en-us/profile?gamertag={}",
-    "PSN Profiles": "https://psnprofiles.com/{}",
-    "Fortnite Tracker": "https://fortnitetracker.com/profile/all/{}",
-    "Chess24": "https://chess24.com/en/profile/{}",
-    "CurseForge": "https://www.curseforge.com/members/{}",
-    "Nexus Mods": "https://www.nexusmods.com/users/{}",
-    "Modrinth": "https://modrinth.com/user/{}",
-    "Speedrun.com": "https://www.speedrun.com/user/{}",
-    "Osu!": "https://osu.ppy.sh/users/{}",
-    "Bandlab": "https://www.bandlab.com/{}",
-    "Snapfish": "https://www.snapfish.com/{}",
-    "Smule": "https://www.smule.com/{}",
-    "Reverbnation": "https://www.reverbnation.com/{}",
-    "Minds": "https://www.minds.com/{}",
-    "Parler": "https://parler.com/{}",
-    "Gettr": "https://gettr.com/user/{}",
-    "Truth Social": "https://truthsocial.com/@{}",
-    "MeWe": "https://mewe.com/i/{}",
-    "VKontakte": "https://vk.com/{}",
-    "Odnoklassniki": "https://ok.ru/{}",
-    "Weibo": "https://weibo.com/{}",
-    "Bilibili": "https://space.bilibili.com/{}",
-    "Douban": "https://www.douban.com/people/{}",
-    "Zhihu": "https://www.zhihu.com/people/{}",
-    "Crunchyroll": "https://www.crunchyroll.com/user/{}",
-    "Allevents": "https://allevents.in/user/{}",
-    "Eventbrite": "https://www.eventbrite.com/o/{}",
-    "BetaList": "https://betalist.com/@{}",
-    "Indie Hackers": "https://www.indiehackers.com/{}",
-    "Dev.to": "https://dev.to/{}",
-    "Hashnode": "https://hashnode.com/@{}",
-    "CodePen": "https://codepen.io/{}",
-    "JSFiddle": "https://jsfiddle.net/user/{}",
-    "Glitch": "https://glitch.com/@{}",
-    "W3Schools": "https://my.w3schools.com/{}",
-    "GeeksforGeeks": "https://auth.geeksforgeeks.org/user/{}",
-    "LeetCode": "https://leetcode.com/{}",
-    "HackerRank": "https://www.hackerrank.com/{}",
-    "TopCoder": "https://www.topcoder.com/members/{}",
-    "Codewars": "https://www.codewars.com/users/{}",
-    "Exercism": "https://exercism.org/profiles/{}",
-    "Scratch": "https://scratch.mit.edu/users/{}",
-    "Tynker": "https://www.tynker.com/community/{}",
-    "DevForum Roblox": "https://devforum.roblox.com/u/{}",
-    "Itch.io Profile": "https://itch.io/profile/{}",
-    "IndieDB": "https://www.indiedb.com/members/{}",
-    "ModDB": "https://www.moddb.com/members/{}",
-
-    # --- Block 3: Streaming, Crypto, Forums & Hardware (201-300) ---
-    "ArtStation": "https://www.artstation.com/{}",
-    "Kick": "https://kick.com/{}",
-    "Trovo": "https://trovo.live/s/{}",
-    "DLive": "https://dlive.tv/{}",
-    "Linktree": "https://linktr.ee/{}",
-    "Beacons": "https://beacons.ai/{}",
-    "Carrd": "https://{}.carrd.co",
-    "OpenSea": "https://opensea.io/{}",
-    "Rarible": "https://rarible.com/{}",
-    "Sketchfab": "https://sketchfab.com/{}",
-    "CGTrader": "https://www.cgtrader.com/{}",
-    "Newgrounds": "https://{}.newgrounds.com",
-    "Kongregate": "https://www.kongregate.com/accounts/{}",
-    "Armor Games": "https://armorgames.com/user/{}",
-    "Hypixel": "https://hypixel.net/players/{}",
-    "Planet Minecraft": "https://www.planetminecraft.com/member/{}",
-    "TruckersMP": "https://truckersmp.com/user/{}",
-    "VRChat": "https://vrchat.com/home/user/{}",
-    "GOG": "https://www.gog.com/u/{}",
-    "SteamTrades": "https://www.steamtrades.com/user/{}",
-    "GameFAQs": "https://gamefaqs.gamespot.com/community/{}",
-    "Fandom Community": "https://community.fandom.com/wiki/User:{}",
-    "Wikipedia (EN)": "https://en.wikipedia.org/wiki/User:{}",
-    "Internet Archive": "https://archive.org/details/@{}",
-    "SourceForge": "https://sourceforge.net/u/{}",
-    "AlternativeTo": "https://alternativeto.net/user/{}",
-    "BleepingComputer": "https://www.bleepingcomputer.com/forums/u/{}",
-    "XDA Forums": "https://xdaforums.com/m/{}",
-    "Linus Tech Tips": "https://linustechtips.com/profile/{}",
-    "Tom's Hardware": "https://forums.tomshardware.com/members/{}",
-    "MacRumors": "https://forums.macrumors.com/members/{}",
-    "ComputerBase Forum": "https://www.computerbase.de/forum/members/{}",
-    "GameStar Forum": "https://www.gamestar.de/community/gspinboard/members/{}",
-    "Polywork": "https://www.polywork.com/{}",
-    "Foundation": "https://foundation.app/@{}",
-    "SuperRare": "https://superrare.com/{}",
-    "Designspiration": "https://www.designspiration.com/{}",
-    "Habitica": "https://habitica.com/profile/{}",
-    "Giant Bomb": "https://www.giantbomb.com/profile/{}",
-    "Metacritic": "https://www.metacritic.com/user/{}",
-    "Apex Tracker": "https://apex.tracker.gg/apex/profile/origin/{}",
-    "Valorant Tracker": "https://tracker.gg/valorant/profile/riot/{}",
-    "Rocket League Tracker": "https://rocketleague.tracker.gg/rocket-league/profile/steam/{}",
-    "Overbuff": "https://www.overbuff.com/players/{}",
-    "SimGrid": "https://www.thesimgrid.com/users/{}",
-    "Wikimedia": "https://meta.wikimedia.org/wiki/User:{}",
-    "Wikivoyage": "https://en.wikivoyage.org/wiki/User:{}",
-    "Wiktionary": "https://en.wiktionary.org/wiki/User:{}",
-    "TurboSquid": "https://www.turbosquid.com/Search/Artists/{}",
-    "Polycount": "https://polycount.com/profile/{}",
-
-    # --- Block 4: Extended Global Networks & Niche Platforms (301-400) ---
-    "StackOverflow": "https://stackoverflow.com/users/{}",
-    "ServerFault": "https://serverfault.com/users/{}",
-    "SuperUser": "https://superuser.com/users/{}",
-    "AskUbuntu": "https://askubuntu.com/users/{}",
-    "StackExchange": "https://stackexchange.com/users/{}",
-    "Veggies": "https://veggies.io/{}",
-    "DeviantHost": "https://deviantart.com/{}",
-    "Docker Hub": "https://hub.docker.com/u/{}",
-    "Npmjs": "https://www.npmjs.com/~{}",
-    "PyPI": "https://pypi.org/user/{}",
-    "RubyGems": "https://rubygems.org/profiles/{}",
-    "Packagist": "https://packagist.org/users/{}",
-    "Nuget": "https://www.nuget.org/profiles/{}",
-    "Crates.io": "https://crates.io/users/{}",
-    "GoCardless": "https://gocardless.com/{}",
-    "Launchpad Profile": "https://launchpad.net/~{}",
-    "Forks": "https://forks.net/u/{}",
-    "Gitee": "https://gitee.com/{}",
-    "GitLab": "https://gitlab.com/{}",
-    "Sourcehut": "https://sr.ht/~{}",
-    "Launchpad Net": "https://launchpad.net/{}",
-    "Bitbucket Cloud": "https://bitbucket.org/account/user/{}/",
-    "Phabricator": "https://phabricator.wikimedia.org/p/{}",
-    "Bugzilla": "https://bugzilla.mozilla.org/user_profile?login={}",
-    "Jira": "https://{}.atlassian.net",
-    "Confluence": "https://{}.atlassian.net/wiki",
-    "Trello": "https://trello.com/{}",
-    "Asana": "https://app.asana.com/-/u/{}",
-    "Monday.com": "https://{}.monday.com",
-    "ClickUp": "https://app.clickup.com/{}",
-    "Notion": "https://www.notion.so/{}",
-    "Airtable": "https://airtable.com/{}",
-    "Coda": "https://coda.io/@{}",
-    "Miro": "https://miro.com/app/profile/{}",
-    "Figma": "https://www.figma.com/@{}",
-    "InVision": "https://projects.invisionapp.com/share/{}",
-    "Axure": "https://www.axure.com/{}",
-    "Proto.io": "https://proto.io/{}",
-    "Balsamiq": "https://balsamiq.com/{}",
-    "MarvelApp": "https://marvelapp.com/{}",
-    "Zeplin": "https://app.zeplin.io/profile/{}",
-    "Storybook": "https://storybook.js.org/{}",
-    "CodeSandBox": "https://codesandbox.io/u/{}",
-    "StackBlitz": "https://stackblitz.com/@{}",
-    "Glitch.me": "https://glitch.com/~{}",
-    "Vercel": "https://vercel.com/{}",
-    "Netlify": "https://app.netlify.com/teams/{}",
-    "Heroku": "https://dashboard.heroku.com/apps/{}",
-    "Render": "https://render.com/{}",
-    "Railway": "https://railway.app/{}",
-
-    # --- Block 5: International, Regional & Professional Portals (401-500) ---
-    "Supabase": "https://supabase.com/@{}",
-    "Firebase": "https://{}.firebaseapp.com",
-    "PlanetScale": "https://planetscale.com/@{}",
-    "MongoDB": "https://www.mongodb.com/community/forums/u/{}",
-    "Neo4j": "https://community.neo4j.com/u/{}",
-    "Redis": "https://redis.com/community/user/{}",
-    "Elastic": "https://discuss.elastic.co/u/{}",
-    "Datadog": "https://www.datadoghq.com/",
-    "Grafana": "https://grafana.com/users/{}",
-    "Prometheus": "https://prometheus.io/",
-    "Docker": "https://www.docker.com/",
-    "Kubernetes": "https://kubernetes.io/",
-    "CNCF": "https://www.cncf.io/",
-    "Apache": "https://www.apache.org/",
-    "Eclipse": "https://www.eclipse.org/user/{}",
-    "Mozilla": "https://mozillians.org/u/{}",
-    "Fedora": "https://apps.fedoraproject.org/people/{}",
-    "Ubuntu": "https://launchpad.net/~{}",
-    "Debian": "https://wiki.debian.org/{}",
-    "Arch Linux": "https://bbs.archlinux.org/profile.php?id={}",
-    "Gentoo": "https://wiki.gentoo.org/wiki/User:{}",
-    "CentOS": "https://wiki.centos.org/{}",
-    "FreeBSD": "https://www.freebsd.org/",
-    "OpenBSD": "https://www.openbsd.org/",
-    "Slackware": "https://www.slackware.com/",
-    "Kali Linux": "https://www.kali.org/",
-    "Parrot OS": "https://www.parrotsec.org/",
-    "WireGuard": "https://www.wireguard.com/",
-    "OpenVPN": "https://openvpn.net/",
-    "Tailscale": "https://tailscale.com/",
-    "Proxmox": "https://forum.proxmox.com/members/{}",
-    "TrueNAS": "https://www.truenas.com/community/members/{}",
-    "Unraid": "https://forums.unraid.net/profile/{}",
-    "Synology": "https://community.synology.com/profile/{}",
-    "QNAP": "https://forum.qnap.com/memberlist.php?mode=viewprofile&u={}",
-    "Raspberry Pi": "https://forums.raspberrypi.com/memberlist.php?mode=viewprofile&u={}",
-    "Arduino": "https://forum.arduino.cc/u/{}",
-    "Adafruit": "https://forums.adafruit.com/memberlist.php?mode=viewprofile&u={}",
-    "SparkFun": "https://www.sparkfun.com/",
-    "Instructables": "https://www.instructables.com/member/{}",
-    "MakerWorld": "https://makerworld.com/en/u/{}",
-    "Printables": "https://www.printables.com/@{}",
-    "Thingiverse": "https://www.thingiverse.com/{}",
-    "Cults3D": "https://cults3d.com/en/users/{}",
-    "MyMiniFactory": "https://www.myminifactory.com/users/{}",
-    "GrabCAD": "https://grabcad.com/{}",
-    "SimScale": "https://www.simscale.com/",
-    "Onshape": "https://www.onshape.com/",
-    "Autodesk": "https://www.autodesk.com/",
-    "Blender Artists": "https://blenderartists.org/u/{}",
-    "ZBrushCentral": "https://www.zbrushcentral.com/u/{}",
-    "Substance 3D": "https://substance3d.adobe.com/",
-    "Cgsociety": "https://{}.cgsociety.org",
-    "Renderosity": "https://www.renderosity.com/users/{}",
-    "Daz 3D": "https://www.daz3d.com/",
-    "TurboSquid Artist": "https://www.turbosquid.com/{}",
-    "CGArchitect": "https://www.cgarchitect.com/members/{}",
-    "Architectural Digest": "https://www.architecturaldigest.com/",
-    "Dezeen": "https://www.dezeen.com/",
-    "DesignBoom": "https://www.designboom.com/",
-    "Yanko Design": "https://www.yankodesign.com/",
-    "Core77": "https://www.core77.com/",
-    "Smashing Magazine": "https://www.smashingmagazine.com/author/{}",
-    "A List Apart": "https://alistapart.com/author/{}",
-    "CSS-Tricks": "https://css-tricks.com/",
-    "SitePoint": "https://www.sitepoint.com/author/{}",
-    "Tuts+": "https://tutsplus.com/",
-    "Envato": "https://elements.envato.com/user/{}",
-    "ThemeForest": "https://themeforest.net/user/{}",
-    "Codecanyon": "https://codecanyon.net/user/{}",
-    "AudioJungle": "https://audiojungle.net/user/{}",
-    "VideoHive": "https://videohive.net/user/{}",
-    "GraphicRiver": "https://graphicriver.net/user/{}",
-    "PhotoDune": "https://photodune.net/user/{}",
-    "3DExport": "https://3dexport.com/{}",
-    "TurboSquid Store": "https://www.turbosquid.com/Search/Artists/{}",
-    "Fiverr": "https://www.fiverr.com/{}",
-    "Upwork": "https://www.upwork.com/freelancers/~{}",
-    "Toptal": "https://www.toptal.com/resume/{}",
-    "Guru": "https://www.guru.com/freelancers/{}",
-    "PeoplePerHour": "https://www.peopleperhour.com/freelancer/{}",
-    "TaskRabbit": "https://www.taskrabbit.com/",
-    "Craigslist": "https://{}.craigslist.org",
-    "eBay": "https://www.ebay.com/usr/{}",
-    "eBay Kleinanzeigen": "https://www.kleinanzeigen.de/pro/{}",
-    "Amazon": "https://www.amazon.com/gp/pdp/profile/{}",
-    "AliExpress": "https://www.aliexpress.com/",
-    "Alibaba": "https://www.alibaba.com/",
-    "Banggood": "https://www.banggood.com/",
-    "GearBest": "https://www.gearbest.com/",
-    "DHgate": "https://www.dhgate.com/",
-    "Wish": "https://www.wish.com/",
-    "Mercari": "https://www.mercari.com/u/{}",
-    "Poshmark": "https://poshmark.com/closet/{}",
-    "Depop": "https://www.depop.com/{}",
-    "Grailed": "https://www.grailed.com/{}",
-    "StockX": "https://stockx.com/{}",
-    "GOAT": "https://www.goat.com/",
-    "Flight Club": "https://www.flightclub.com/",
-
-    # --- Block 6: Niche Forums, Blogs & Publishing (501-600) ---
-    "Steemit": "https://steemit.com/@{}",
-    "Hive.blog": "https://hive.blog/@{}",
-    "Blurt": "https://blurt.blog/@{}",
-    "Read.cash": "https://read.cash/@{}",
-    "Publish0x": "https://www.publish0x.com/@{}",
-    "Mirror.xyz": "https://mirror.xyz/{}",
-    "Telegraph": "https://telegra.ph/{}",
-    "Telegra.ph": "https://telegra.ph/user-{}",
-    "Taringa": "https://www.taringa.net/{}",
-    "Menéame": "https://www.meneame.net/user/{}",
-    "Barrapunto": "https://barrapunto.com/users/{}",
-    "Disaboom": "https://disaboom.com/{}",
-    "Fark": "https://www.fark.com/c/{}",
-    "Slashdot": "https://slashdot.org/~{}",
-    "Kuro5hin": "https://www.kuro5hin.org/user/{}",
-    "MetaFilter": "https://www.metafilter.com/user/{}",
-    "Ask MetaFilter": "https://ask.metafilter.com/user/{}",
-    "Imdb": "https://www.imdb.com/name/nm{}/",
-    "Rotten Tomatoes": "https://www.rottentomatoes.com/critic/{}",
-    "Metacritic User": "https://www.metacritic.com/user/{}",
-    "TVMaze": "https://www.tvmaze.com/users/{}",
-    "Trakt.tv": "https://trakt.tv/users/{}",
-    "Anime-Planet": "https://www.anime-planet.com/users/{}",
-    "MangaUpdates": "https://www.mangaupdates.com/members.html?id={}",
-    "AniDB": "https://anidb.net/creator/{}",
-    "Kitsu": "https://kitsu.io/users/{}",
-    "LiveJournal": "https://{}.livejournal.com",
-    "OpenJournal": "https://openjournal.io/{}",
-    "Typepad": "https://{}.typepad.com",
-    "Xanga": "https://www.xanga.com/{}",
-    "Blogspot": "https://{}.blogspot.com",
-    "Tumblr": "https://{}.tumblr.com",
-    "Postach.io": "https://postach.io/{}",
-    "Ghost.org": "https://{}.ghost.io",
-    "Wix Blog": "https://{}.wixsite.com",
-    "Weebly": "https://{}.weebly.com",
-    "Jimdo": "https://{}.jimdosite.com",
-    "Strikingly": "https://{}.strikingly.com",
-    "Webflow": "https://{}.webflow.io",
-    "Yola": "https://{}.yolasite.com",
-    "Homestead": "https://{}.homestead.com",
-    "Tripod": "https://{}.tripod.com",
-    "Angelfire": "https://www.angelfire.com/{}",
-    "Geocities": "https://www.geocities.ws/{}",
-    "Neocities": "https://neocities.org/site/{}",
-    "Site123": "https://{}.site123.me",
-    "Ucraft": "https://{}.ucraft.site",
-    "Zoho Sites": "https://{}.zohosites.com",
-    "HubPages": "https://hubpages.com/@{}",
-    "Vocal.media": "https://vocal.media/authors/{}",
-    "NewsBreak": "https://www.newsbreak.com/@{}",
-    "Contently": "https://contently.com/{}",
-    "Muck Rack": "https://muckrack.com/{}",
-    "Clippings.me": "https://clippings.me/{}",
-    "Journo Portfolio": "https://journoportfolio.com/{}",
-    "Authory": "https://authory.com/{}",
-    "Pressfolios": "https://pressfolios.com/{}",
-    "Skyrock": "https://{}.skyrock.com",
-    "Tagged": "https://www.tagged.com/{}",
-    "Badoo": "https://badoo.com/en/{}",
-    "Tinder": "https://tinder.com/@{}",
-    "Bumble": "https://bumble.com/{}",
-    "Hinge": "https://hinge.co/{}",
-    "OkCupid": "https://www.okcupid.com/profile/{}",
-    "Match.com": "https://www.match.com/p/{}",
-    "PlentyOfFish": "https://www.pof.com/viewprofile.aspx?profile_id={}",
-    "Grindr": "https://grindr.com/{}",
-    "Her": "https://weareher.com/{}",
-    "Feeld": "https://feeld.co/{}",
-    "Coffee Meets Bagel": "https://coffeemeetsbagel.com/{}",
-    "Happn": "https://www.happn.com/{}",
-    "Zoosk": "https://www.zoosk.com/profile/{}",
-    "Elite Singles": "https://www.elitesingles.com/{}",
-    "SilverSingles": "https://www.silversingles.com/{}",
-    "Christian Mingle": "https://www.christianmingle.com/{}",
-    "JDate": "https://www.jdate.com/{}",
-    "BlackPeopleMeet": "https://www.blackpeoplemeet.com/{}",
-    "LatinFeels": "https://www.latinfeels.com/{}",
-    "AsianDating": "https://www.asiandating.com/{}",
-    "InterracialMatch": "https://www.interracialmatch.com/{}",
-    "MatureDating": "https://www.maturedating.com/{}",
-    "SeniorPeopleMeet": "https://www.seniorpeoplemeet.com/{}",
-    "SingleParents": "https://www.singleparents.com/{}",
-    "MillionaireMatch": "https://www.millionairematch.com/{}",
-    "Seeking": "https://www.seeking.com/profile/{}",
-    "Ashley Madison": "https://www.ashleymadison.com/{}",
-    "Purrfect Date": "https://purrfectdate.com/{}",
-    "Her Campus": "https://www.hercampus.com/author/{}",
-    "The Odyssey Online": "https://www.theodysseyonline.com/user/{}",
-    "BuzzFeed": "https://www.buzzfeed.com/{}",
-    "Bustle": "https://www.bustle.com/profile/{}",
-    "Refinery29": "https://www.refinery29.com/author/{}",
-    "Vice": "https://www.vice.com/en/contributor/{}",
-    "Vox": "https://www.vox.com/authors/{}",
-    "The Verge": "https://www.theverge.com/authors/{}",
-    "Polygon": "https://www.polygon.com/authors/{}",
-    "Eater": "https://www.eater.com/users/{}",
-
-    # --- Block 7: Creative, Audio & Portfolio Platforms (601-700) ---
-    "Pixiv": "https://www.pixiv.net/en/users/{}",
-    "ArtStation Portfolio": "https://www.artstation.com/{}/profile",
-    "CGSociety Profile": "https://{}.cgsociety.org/",
-    "Behance Project": "https://www.behance.net/{}/projects",
-    "Dribbble Shots": "https://dribbble.com/{}/shots",
-    "Flickr Photos": "https://www.flickr.com/photos/{}/",
-    "500px Portfolio": "https://500px.com/{}/portfolio",
-    "Designspiration Board": "https://www.designspiration.com/{}/saves/",
-    "Pinterest Pins": "https://www.pinterest.com/{}/_saved/",
-    "DeviantArt Gallery": "https://www.deviantart.com/{}/gallery",
-    "Tumblr Blog": "https://{}.tumblr.com/",
-    "Medium Stories": "https://medium.com/@{}/latest",
-    "Substack Posts": "https://substack.com/@{}/posts",
-    "SoundCloud Tracks": "https://soundcloud.com/{}/tracks",
-    "Bandcamp Music": "https://bandcamp.com/{}/music",
-    "Spotify Artist": "https://open.spotify.com/artist/{}",
-    "Apple Music": "https://music.apple.com/us/artist/{}",
-    "Tidal": "https://tidal.com/artist/{}",
-    "Deezer": "https://www.deezer.com/artist/{}",
-    "Amazon Music": "https://music.amazon.com/artists/{}",
-    "Pandora": "https://www.pandora.com/artist/{}",
-    "Audiomack Artist": "https://audiomack.com/{}/music",
-    "Mixcloud Sets": "https://www.mixcloud.com/{}/uploads/",
-    "ReverbNation Band": "https://www.reverbnation.com/{}",
-    "Splice": "https://splice.com/{}",
-    "Beatport": "https://www.beatport.com/artist/{}",
-    "Traxsource": "https://www.traxsource.com/artist/{}",
-    "Juno Download": "https://www.junodownload.com/artists/{}/",
-    "SoundClick": "https://www.soundclick.com/{}",
-    "PureVolume": "https://www.purevolume.com/{}",
-    "Triple J Unearthed": "https://www.triplejunearthed.com/artist/{}",
-    "Songkick": "https://www.songkick.com/artists/{}",
-    "Bandsintown": "https://www.bandsintown.com/a/{}",
-    "Setlist.fm": "https://www.setlist.fm/setlists/{}",
-    "Discogs": "https://www.discogs.com/artist/{}",
-    "AllMusic": "https://www.allmusic.com/artist/{}",
-    "Rate Your Music Artist": "https://rateyourmusic.com/artist/{}",
-    "VGMdb": "https://vgmdb.net/artist/{}",
-    "MusicBrainz": "https://musicbrainz.org/artist/{}",
-    "Genius Artist": "https://genius.com/artists/{}",
-    "Musixmatch": "https://www.musixmatch.com/profile/{}",
-    "Shazam": "https://www.shazam.com/artist/{}",
-    "AZLyrics": "https://www.azlyrics.com/{}.html",
-    "Vimeo Video": "https://vimeo.com/{}/videos",
-    "YouTube Channel": "https://www.youtube.com/c/{}",
-    "Dailymotion Channel": "https://www.dailymotion.com/{}/videos",
-    "Twitch Clips": "https://www.twitch.tv/{}/clips",
-    "Kick Stream": "https://kick.com/{}/videos",
-    "Trovo Stream": "https://trovo.live/s/{}/clips",
-    "DLive Channel": "https://dlive.tv/{}/clips",
-    "Facebook Watch": "https://www.facebook.com/{}/videos",
-    "Instagram Reels": "https://www.instagram.com/{}/reels/",
-    "TikTok Videos": "https://www.tiktok.com/@{}/video",
-    "Snapchat Spotlight": "https://www.snapchat.com/spotlight/{}",
-    "Clapper Videos": "https://clapperapp.com/{}/videos",
-    "Rumble Channel": "https://rumble.com/c/{}",
-    "Bitchute Channel": "https://www.bitchute.com/channel/{}/",
-    "Odysee": "https://odysee.com/@{}",
-    "Sketchfab 3D": "https://sketchfab.com/{}/models",
-    "CGTrader Models": "https://www.cgtrader.com/{}/models",
-    "TurboSquid Author": "https://www.turbosquid.com/Search/Artists/{}",
-    "Polycount Forum": "https://polycount.com/profile/{}",
-    "ZBrushCentral Profile": "https://www.zbrushcentral.com/u/{}",
-    "Blender Artists User": "https://blenderartists.org/u/{}",
-    "Substance Share": "https://substance3d.adobe.com/community-assets/profile/{}",
-    "Unity Asset Store": "https://assetstore.unity.com/publishers/{}",
-    "Unreal Marketplace": "https://www.unrealengine.com/marketplace/en-US/profile/{}",
-    "GameDev.net": "https://gamedev.net/profile/{}",
-    "IndieDB Profile": "https://www.indiedb.com/members/{}",
-    "ModDB Profile": "https://www.moddb.com/members/{}",
-    "Itch.io": "https://{}.itch.io",
-    "GameJolt Profile": "https://gamejolt.com/@{}",
-    "Kongregate Profile": "https://www.kongregate.com/accounts/{}",
-    "Newgrounds Profile": "https://{}.newgrounds.com/",
-    "Armor Games Profile": "https://armorgames.com/user/{}",
-    "PlayStation Network": "https://my.playstation.com/profile/{}",
-    "Xbox Gamertag": "https://account.xbox.com/en-us/profile?gamertag={}",
-    "Steam Profile URL": "https://steamcommunity.com/id/{}",
-    "Epic Games Profile": "https://www.epicgames.com/id/{}",
-    "Battle.net Profile": "https://battle.net/{}",
-    "Riot Games ID": "https://tracker.gg/valorant/profile/riot/{}",
-    "Ubisoft Connect": "https://ubisoftconnect.com/{}",
-    "Rockstar Social Club": "https://socialclub.rockstargames.com/member/{}",
-    "League of Graphs": "https://www.leagueofgraphs.com/summoner/euw/{}",
-    "OP.GG": "https://op.gg/summoners/euw/{}",
-    "Blitz.gg": "https://blitz.gg/lol/profile/euw/{}",
-    "Mobalytics": "https://app.mobalytics.gg/lol/profile/euw/{}",
-    "Tracker.gg": "https://tracker.gg/valorant/profile/riot/{}",
-
-    # --- Block 8: Gaming Guilds, Servers & Wikis (701-800) ---
-    "Minecraft Forums": "https://www.minecraftforum.net/members/{}",
-    "Planet Minecraft User": "https://www.planetminecraft.com/member/{}",
-    "CurseForge Author": "https://www.curseforge.com/members/{}",
-    "Nexus Mods User": "https://www.nexusmods.com/users/{}",
-    "Modrinth User": "https://modrinth.com/user/{}",
-    "SpigotMC": "https://www.spigotmc.org/members/{}",
-    "Bukkit Forums": "https://dev.bukkit.org/members/{}",
-    "Hangar Bukkit": "https://hangar.papermc.io/{}",
-    "Forge Forums": "https://forums.minecraftforge.net/profile/{}",
-    "MCPEDL": "https://mcpedl.com/user/{}",
-    "Terraria Community": "https://forums.terraria.org/index.php?members/{}",
-    "Starbound Forums": "https://community.playstarbound.com/members/{}",
-    "GameBanana": "https://gamebanana.com/members/{}",
-    "ModDB Members": "https://www.moddb.com/members/{}",
-    "IndieDB Members": "https://www.indiedb.com/members/{}",
-    "Speedrun User": "https://www.speedrun.com/user/{}",
-    "Osu Profile": "https://osu.ppy.sh/users/{}",
-    "Chess.com Profile": "https://www.chess.com/member/{}",
-    "Lichess Profile": "https://lichess.org/@/{}",
-    "RuneScape Hiscores": "https://secure.runescape.com/m=hiscore/index_lite.ws?player={}",
-    "Old School RuneScape Hiscores": "https://secure.runescape.com/m=hiscore_oldschool/hiscorepersonal.ws?user1={}",
-    "World of Warcraft Armory": "https://worldofwarcraft.blizzard.com/en-us/character/eu/{}",
-    "Final Fantasy XIV Lodestone": "https://lodestone.finalfantasyxiv.com/lodestone/character/{}",
-    "Star Citizen": "https://robertsspaceindustries.com/citizens/{}",
-    "Warframe": "https://forums.warframe.com/profile/{}",
-    "Destiny Tracker": "https://destinytracker.com/destiny-2/profile/psn/{}",
-    "Apex Legends Tracker": "https://apex.tracker.gg/apex/profile/origin/{}",
-    "Fortnite Tracker Profile": "https://fortnitetracker.com/profile/all/{}",
-    "Rocket League Garage": "https://rocket-league.com/player/{}",
-    "Overwatch Tracker": "https://tracker.gg/overwatch/profile/battlenet/{}",
-    "CSGO Stats": "https://csgostats.app/player/{}",
-    "Faceit": "https://www.faceit.com/en/players/{}",
-    "ESEA": "https://play.esea.net/users/{}",
-    "Assetto Corsa Mods": "https://www.assettocorsa.net/forum/index.php?members/{}",
-    "RaceDepartment": "https://www.racedepartment.com/members/{}",
-    "TruckersMP Profile": "https://truckersmp.com/user/{}",
-    "SCS Software": "https://forum.scssoft.com/memberlist.php?mode=viewprofile&u={}",
-    "FlightSim.to": "https://flightsim.to/profile/{}",
-    "X-Plane": "https://forums.x-plane.org/index.php?/profile/{}",
-    "FSDeveloper": "https://www.fsdeveloper.com/forum/members/{}",
-    "Avsim": "https://www.avsim.com/forums/user/{}",
-    "IL-2 Sturmovik": "https://forum.il2sturmovik.com/profile/{}",
-    "War Thunder Forum": "https://forum.warthunder.com/index.php?/profile/{}",
-    "World of Tanks": "https://worldoftanks.eu/community/accounts/{}",
-    "Paradox Interactive": "https://forum.paradoxplaza.com/forum/members/{}",
-    "Creative Assembly": "https://forums.creative-assembly.com/profile/{}",
-    "Bethesda Forums": "https://bethesda.net/community/user/{}",
-    "CD Projekt Red": "https://forums.cdprojektred.com/index.php?members/{}"
+# --- OSINT TARGET DATABASE (NACH KATEGORIEN STRUKTURIERT) ---
+PLATFORMS_DB = {
+    "Social & Networks": {
+        "GitHub": "https://github.com/{}",
+        "X (Twitter)": "https://twitter.com/{}",
+        "Reddit": "https://www.reddit.com/user/{}",
+        "Instagram": "https://www.instagram.com/{}",
+        "TikTok": "https://www.tiktok.com/@{}",
+        "LinkedIn": "https://www.linkedin.com/in/{}",
+        "Facebook": "https://www.facebook.com/{}",
+        "Telegram": "https://t.me/{}",
+        "Pinterest": "https://pinterest.com/{}",
+        "Snapchat": "https://www.snapchat.com/add/{}",
+        "Mastodon": "https://mastodon.social/@{}",
+        "Medium": "https://medium.com/@{}",
+        "Quora": "https://www.quora.com/profile/{}",
+        "Substack": "https://substack.com/@{}",
+        "Tumblr": "https://{}.tumblr.com",
+        "VKontakte": "https://vk.com/{}",
+        "Keybase": "https://keybase.io/{}",
+        "About.me": "https://about.me/{}",
+        "Disqus": "https://disqus.com/by/{}",
+        "Linktree": "https://linktr.ee/{}"
+    },
+    "Gaming & Esports": {
+        "Steam": "https://steamcommunity.com/id/{}",
+        "Twitch": "https://www.twitch.tv/{}",
+        "Kick": "https://kick.com/{}",
+        "Chess.com": "https://www.chess.com/member/{}",
+        "Lichess": "https://lichess.org/@/{}",
+        "Xbox": "https://account.xbox.com/en-us/profile?gamertag={}",
+        "PSN Profiles": "https://psnprofiles.com/{}",
+        "Fortnite Tracker": "https://fortnitetracker.com/profile/all/{}",
+        "Apex Tracker": "https://apex.tracker.gg/apex/profile/origin/{}",
+        "Speedrun.com": "https://www.speedrun.com/user/{}",
+        "Osu!": "https://osu.ppy.sh/users/{}",
+        "Nexus Mods": "https://www.nexusmods.com/users/{}",
+        "CurseForge": "https://www.curseforge.com/members/{}",
+        "Planet Minecraft": "https://www.planetminecraft.com/member/{}",
+        "Roblox DevForum": "https://devforum.roblox.com/u/{}",
+        "Itch.io": "https://{}.itch.io",
+        "VRChat": "https://vrchat.com/home/user/{}",
+        "TruckersMP": "https://truckersmp.com/user/{}",
+        "Faceit": "https://www.faceit.com/en/players/{}"
+    },
+    "Developer & Tech": {
+        "GitLab": "https://gitlab.com/{}",
+        "Bitbucket": "https://bitbucket.org/{}",
+        "Replit": "https://replit.com/@{}",
+        "CodePen": "https://codepen.io/{}",
+        "StackOverflow": "https://stackoverflow.com/users/{}",
+        "Kaggle": "https://www.kaggle.com/{}",
+        "Docker Hub": "https://hub.docker.com/u/{}",
+        "Npmjs": "https://www.npmjs.com/~{}",
+        "PyPI": "https://pypi.org/user/{}",
+        "HackerNews": "https://news.ycombinator.com/user?id={}",
+        "LeetCode": "https://leetcode.com/{}",
+        "HackerRank": "https://www.hackerrank.com/{}",
+        "Codecademy": "https://www.codecademy.com/profiles/{}",
+        "Glitch": "https://glitch.com/@{}",
+        "Vercel": "https://vercel.com/{}"
+    },
+    "Media & Creative": {
+        "Spotify": "https://open.spotify.com/user/{}",
+        "SoundCloud": "https://soundcloud.com/{}",
+        "YouTube": "https://www.youtube.com/@{}",
+        "Vimeo": "https://vimeo.com/{}",
+        "Behance": "https://www.behance.net/{}",
+        "Dribbble": "https://dribbble.com/{}",
+        "DeviantArt": "https://www.deviantart.com/{}",
+        "Flickr": "https://www.flickr.com/photos/{}",
+        "500px": "https://500px.com/{}",
+        "Bandcamp": "https://bandcamp.com/{}",
+        "ArtStation": "https://www.artstation.com/{}",
+        "Sketchfab": "https://sketchfab.com/{}",
+        "Mixcloud": "https://www.mixcloud.com/{}",
+        "Last.fm": "https://www.last.fm/user/{}"
+    },
+    "E-Commerce & Services": {
+        "Etsy": "https://www.etsy.com/people/{}",
+        "Vinted": "https://www.vinted.fr/member/{}",
+        "eBay": "https://www.ebay.com/usr/{}",
+        "Patreon": "https://www.patreon.com/{}",
+        "Ko-fi": "https://ko-fi.com/{}",
+        "BuyMeACoffee": "https://buymeacoffee.com/{}",
+        "Fiverr": "https://www.fiverr.com/{}",
+        "CashApp": "https://cash.app/${}"
+    }
 }
 
-# Robuste Prüffunktion mit Soft-404-Erkennung und Browser-Headern
-def check_platform_robust(url, username):
+# --- ROBUSTE PRÜFFUNKTION MIT CODES & SOFT-404 DETEKTION ---
+def check_platform(name, category, url_template, username, timeout=5):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
     }
+    
+    # Platzhalter auflösen
+    target_url = url_template.format(username, username) if url_template.count('{}') > 1 else url_template.format(username)
+    
     try:
-        # Multi-Placeholder-Auflösung (falls {} mehrfach vorkommt)
-        target_url = url.format(username, username) if url.count('{}') > 1 else url.format(username)
+        response = requests.get(target_url, headers=headers, timeout=timeout, allow_redirects=True)
         
-        response = requests.get(target_url, headers=headers, timeout=5, allow_redirects=True)
-        
-        if response.status_code != 200:
-            return False
+        if response.status_code == 200:
+            page_text = response.text.lower()
+            not_found_indicators = [
+                "not found", "does not exist", "user not found", "account not found",
+                "seite nicht gefunden", "konto existiert nicht", "profil wurde nicht gefunden",
+                "dieses profil ist leider nicht verfügbar", "error 404", "ungültiger benutzer",
+                "page not found", "couldn't find this account"
+            ]
             
-        page_text = response.text.lower()
-        not_found_indicators = [
-            "not found", "does not exist", "user not found", "account not found",
-            "seite nicht gefunden", "konto existiert nicht", "profil wurde nicht gefunden",
-            "dieses profil ist leider nicht verfügbar", "error 404", "ungültiger benutzer"
-        ]
-        
-        for indicator in not_found_indicators:
-            if indicator in page_text:
-                return False
-                
-        return True
+            for indicator in not_found_indicators:
+                if indicator in page_text:
+                    return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
+                    
+            return {"name": name, "category": category, "url": target_url, "status": "FOUND"}
+            
+        elif response.status_code in [403, 429] or "cloudflare" in response.text.lower():
+            return {"name": name, "category": category, "url": target_url, "status": "BLOCKED", "code": response.status_code}
+        elif response.status_code == 404:
+            return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
+        else:
+            return {"name": name, "category": category, "url": target_url, "status": "ERROR", "code": response.status_code}
+            
+    except requests.exceptions.Timeout:
+        return {"name": name, "category": category, "url": target_url, "status": "TIMEOUT"}
     except requests.exceptions.RequestException:
-        return False
+        return {"name": name, "category": category, "url": target_url, "status": "ERROR", "code": "Exception"}
 
-# --- Streamlit Benutzeroberfläche ---
-st.title("🛡️ Stealth OSINT Scanner")
-st.markdown("Durchsuche hunderte Plattformen nach einem Benutzernamen mit robuster Filterung.")
+# --- HELPER: CSV EXPORT ERZEUGEN ---
+def generate_csv(results):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Plattform", "Kategorie", "Status", "URL"])
+    for r in results:
+        writer.writerow([r["name"], r["category"], r["status"], r["url"]])
+    return output.getvalue()
 
-username_input = st.text_input("Benutzername eingeben:")
+# --- INITIALISIERUNG DES SESSION STATES ---
+if "scan_results" not in st.session_state:
+    st.session_state["scan_results"] = None
+if "scanned_user" not in st.session_state:
+    st.session_state["scanned_user"] = ""
 
-if st.button("Scan starten"):
+# --- SIDEBAR EINSTELLUNGEN ---
+st.sidebar.title("⚙️ Engine Konfiguration")
+
+selected_categories = st.sidebar.multiselect(
+    "Kategorien auswählen:",
+    options=list(PLATFORMS_DB.keys()),
+    default=list(PLATFORMS_DB.keys())
+)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🚀 Performance Settings")
+max_threads = st.sidebar.slider("Parallel Threads (Geschwindigkeit)", min_value=4, max_value=32, value=16)
+request_timeout = st.sidebar.slider("Timeout pro Anfrage (Sekunden)", min_value=2, max_value=10, value=5)
+
+# Plattform-Anzahl berechnen
+active_targets = []
+for cat in selected_categories:
+    for name, url in PLATFORMS_DB[cat].items():
+        active_targets.append((name, cat, url))
+
+st.sidebar.info(f"Aktivierte Targets: **{len(active_targets)}** Plattformen")
+
+# --- MAIN UI ---
+st.title("🛡️ Stealth OSINT Engine v2.0")
+st.markdown("Hochleistungs-Aufklärung von Benutzerprofilen über mehrere Netzwerke hinweg.")
+
+col_input, col_button = st.columns([3, 1])
+
+with col_input:
+    username_input = st.text_input("Ziel-Benutzername eingeben:", value=st.session_state["scanned_user"], placeholder="z.B. Alex123")
+
+with col_button:
+    st.markdown("<br>", unsafe_allow_html=True)
+    start_scan = st.button("🔍 Scan Starten")
+
+# --- SCAN LOGIK ---
+if start_scan:
     if not username_input.strip():
         st.warning("Bitte gib einen gültigen Benutzernamen ein.")
+    elif not active_targets:
+        st.error("Bitte wähle mindestens eine Kategorie in der Sidebar aus!")
     else:
-        st.info(f"Scanne Plattformen für: **{username_input}** ...")
+        st.session_state["scanned_user"] = username_input
+        st.info(f"Starte Echtzeit-Scan für **{username_input}** auf {len(active_targets)} Plattformen...")
         
-        valid_results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        total_platforms = len(platforms)
+        results = []
         completed = 0
+        total = len(active_targets)
         
-        def worker(item):
-            name, url_template = item
-            is_valid = check_platform_robust(url_template, username_input)
-            resolved_url = url_template.format(username_input, username_input) if url_template.count('{}') > 1 else url_template.format(username_input)
-            return (name, resolved_url, is_valid)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-            futures = [executor.submit(worker, item) for item in platforms.items()]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            futures = [
+                executor.submit(check_platform, name, cat, url, username_input, request_timeout)
+                for name, cat, url in active_targets
+            ]
             
             for future in concurrent.futures.as_completed(futures):
+                res = future.result()
+                results.append(res)
                 completed += 1
-                progress_bar.progress(completed / total_platforms)
-                status_text.text(f"Fortschritt: {completed}/{total_platforms} Plattformen geprüft...")
-                
-                name, resolved_url, is_valid = future.result()
-                if is_valid:
-                    valid_results.append((name, resolved_url))
+                progress_bar.progress(completed / total)
+                status_text.text(f"Geprüft: {completed}/{total} Target-Webseiten...")
 
-        status_text.empty()
         progress_bar.empty()
+        status_text.empty()
         
-        st.success(f"Scan beendet! {len(valid_results)} valide Profile gefunden.")
-        
-        if valid_results:
-            for name, url in valid_results:
-                st.markdown(f"- **{name}**: [{url}]({url})")
+        st.session_state["scan_results"] = results
+        st.success("Scan erfolgreich abgeschlossen!")
+
+# --- ERGEBNIS-ANZEIGE (FALLS VORHANDEN) ---
+if st.session_state["scan_results"]:
+    results = st.session_state["scan_results"]
+    
+    found_list = [r for r in results if r["status"] == "FOUND"]
+    blocked_list = [r for r in results if r["status"] == "BLOCKED"]
+    not_found_list = [r for r in results if r["status"] == "NOT_FOUND"]
+    error_list = [r for r in results if r["status"] in ["ERROR", "TIMEOUT"]]
+
+    st.markdown("---")
+    
+    # METRIKEN DASHBOARD
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("✅ Gefunden", len(found_list))
+    m2.metric("⚠️ Geblockt / Captcha", len(blocked_list))
+    m3.metric("🚫 Nicht vorhanden", len(not_found_list))
+    m4.metric("❌ Fehler / Timeout", len(error_list))
+    
+    # TABS FÜR ERGEBNISSE
+    tab_found, tab_blocked, tab_export = st.tabs([
+        f"🎯 Gefunden ({len(found_list)})", 
+        f"⚠️ Geblockt/Schutzfilter ({len(blocked_list)})", 
+        "💾 Export & Report"
+    ])
+    
+    with tab_found:
+        if found_list:
+            st.markdown("### Active Profile Links")
+            for item in found_list:
+                st.markdown(f"- **[{item['category']}] {item['name']}**: [{item['url']}]({item['url']})")
         else:
-            st.info("Keine aktiven Profile gefunden.")
+            st.write("Keine aktiven Profile für diesen Namen gefunden.")
+            
+    with tab_blocked:
+        if blocked_list:
+            st.warning("Diese Seiten haben die Anfrage blockiert (z. B. durch Cloudflare, CAPTCHAs oder Log-In Pflicht). Ein Profil könnte hier existieren.")
+            for item in blocked_list:
+                code_info = f" (Status {item.get('code')})" if 'code' in item else ""
+                st.markdown(f"- **{item['name']}**{code_info}: [{item['url']}]({item['url']})")
+        else:
+            st.write("Keine Blockaden festgestellt.")
+
+    with tab_export:
+        st.markdown("### Report Exportieren")
+        col_csv, col_json = st.columns(2)
+        
+        # CSV Export
+        csv_data = generate_csv(results)
+        col_csv.download_button(
+            label="📄 Als CSV herunterladen",
+            data=csv_data,
+            file_name=f"osint_report_{st.session_state['scanned_user']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        
+        # JSON Export
+        json_data = json.dumps({
+            "target": st.session_state["scanned_user"],
+            "timestamp": datetime.now().isoformat(),
+            "summary": {
+                "found": len(found_list),
+                "blocked": len(blocked_list),
+                "not_found": len(not_found_list),
+                "errors": len(error_list)
+            },
+            "results": results
+        }, indent=2, ensure_ascii=False)
+        
+        col_json.download_button(
+            label="🌐 Als JSON herunterladen",
+            data=json_data,
+            file_name=f"osint_report_{st.session_state['scanned_user']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json"
+        )
