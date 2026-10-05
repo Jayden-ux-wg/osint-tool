@@ -1,6 +1,5 @@
 import streamlit as st
-import urllib.request
-import urllib.error
+import requests
 import time
 import concurrent.futures
 
@@ -45,7 +44,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Die 1000 Plattformen (Massive OSINT Target Database)
+# Die Plattformen (Massive OSINT Target Database)
 platforms = {
     # --- Block 1: Social, Tech & Dev (1-100) ---
     "GitHub": "https://github.com/{}",
@@ -639,214 +638,83 @@ platforms = {
     "Paradox Interactive": "https://forum.paradoxplaza.com/forum/members/{}",
     "Creative Assembly": "https://forums.creative-assembly.com/profile/{}",
     "Bethesda Forums": "https://bethesda.net/community/user/{}",
-    "CD Projekt Red": "https://forums.cdprojektred.com/index.php?members/{}",
-    "Ubisoft Forums": "https://discussions.ubisoft.com/user/{}",
-
-    # --- Block 9: Developer, APIs & Cloud Tools (801-900) ---
-    "GitHub User": "https://github.com/{}",
-    "GitLab User": "https://gitlab.com/{}",
-    "Bitbucket User": "https://bitbucket.org/{}",
-    "Sourcehut User": "https://sr.ht/~{}/",
-    "Gitee User": "https://gitee.com/{}",
-    "Codeberg": "https://codeberg.org/{}",
-    "SourceForge User": "https://sourceforge.net/u/{}/profile",
-    "Launchpad User": "https://launchpad.net/~{}",
-    "DockerHub User": "https://hub.docker.com/u/{}",
-    "NPM User": "https://www.npmjs.com/~{}",
-    "PyPI User": "https://pypi.org/user/{}",
-    "RubyGems User": "https://rubygems.org/profiles/{}",
-    "Packagist User": "https://packagist.org/users/{}",
-    "NuGet User": "https://www.nuget.org/profiles/{}",
-    "Crates.io User": "https://crates.io/users/{}",
-    "Go Modules": "https://pkg.go.dev/{}",
-    "Hex.pm": "https://hex.pm/users/{}",
-    "Dart Package": "https://pub.dev/publishers/{}",
-    "CocoaPods": "https://cocoapods.org/owners/{}",
-    "JitPack": "https://jitpack.io/@{}",
-    "StackOverflow User": "https://stackoverflow.com/users/{}",
-    "ServerFault User": "https://serverfault.com/users/{}",
-    "SuperUser User": "https://superuser.com/users/{}",
-    "AskUbuntu User": "https://askubuntu.com/users/{}",
-    "StackExchange User": "https://stackexchange.com/users/{}",
-    "GitHub Gist": "https://gist.github.com/{}",
-    "Pastebin": "https://pastebin.com/u/{}",
-    "Hastebin": "https://www.toptal.com/developers/hastebin/{}",
-    "Controlc": "https://controlc.com/{}",
-    "JustPaste.it": "https://justpaste.it/u/{}",
-    "Scribd": "https://www.scribd.com/{}",
-    "Issuu": "https://issuu.com/{}",
-    "SlideShare User": "https://www.slideshare.net/{}",
-    "Academia.edu": "https://independent.academia.edu/{}",
-    "ResearchGate": "https://www.researchgate.net/profile/{}",
-    "Google Scholar": "https://scholar.google.com/citations?user={}",
-    "ORCID": "https://orcid.org/{}",
-    "Publons": "https://publons.com/researcher/{}",
-    "IEEE Xplore": "https://ieeexplore.ieee.org/author/{}",
-    "ACM Digital Library": "https://dl.acm.org/profile/{}",
-    "arXiv": "https://arxiv.org/a/{}",
-    "Zotero": "https://www.zotero.org/{}",
-    "Mendeley": "https://www.mendeley.com/profiles/{}",
-    "Preprints.org": "https://www.preprints.org/author/{}",
-    "Zenodo": "https://zenodo.org/communities/{}",
-    "Figshare": "https://figshare.com/authors/{}",
-    "Open Science Framework": "https://osf.io/{}",
-    "Kaggle Profile": "https://www.kaggle.com/{}",
-    "Hugging Face": "https://huggingface.co/{}",
-    "Papers With Code": "https://paperswithcode.com/user/{}",
-    "OpenML": "https://www.openml.org/u/{}",
-    "Data World": "https://data.world/{}",
-    "DrivenData": "https://www.drivendata.org/users/{}",
-    "TopCoder User": "https://www.topcoder.com/members/{}",
-    "HackerRank User": "https://www.hackerrank.com/{}",
-    "LeetCode User": "https://leetcode.com/{}",
-    "CodeWars User": "https://www.codewars.com/users/{}",
-    "Exercism User": "https://exercism.org/profiles/{}",
-    "GeeksforGeeks User": "https://auth.geeksforgeeks.org/user/{}",
-    "W3Schools User": "https://my.w3schools.com/{}",
-    "Codecademy User": "https://www.codecademy.com/profiles/{}",
-    "freeCodeCamp": "https://www.freecodecamp.org/{}",
-    "Coursera Profile": "https://www.coursera.org/user/{}",
-    "Udemy Profile": "https://www.udemy.com/user/{}",
-    "Pluralsight": "https://app.pluralsight.com/profile/{}",
-    "Skillshare": "https://www.skillshare.com/user/{}",
-    "Domestika": "https://www.domestika.org/en/{}",
-
-    # --- Block 10: E-Commerce, Marketplace & Services (901-1000) ---
-    "Etsy Store": "https://www.etsy.com/shop/{}",
-    "eBay Profile": "https://www.ebay.com/usr/{}",
-    "Amazon Store": "https://www.amazon.com/shops/{}",
-    "AliExpress Store": "https://www.aliexpress.com/store/{}",
-    "Alibaba Supplier": "https://{}.trustpass.alibaba.com",
-    "Wish Store": "https://www.wish.com/merchant/{}",
-    "Mercari Profile": "https://www.mercari.com/u/{}",
-    "Poshmark Closet": "https://poshmark.com/closet/{}",
-    "Depop Shop": "https://www.depop.com/{}/",
-    "Grailed Closet": "https://www.grailed.com/{}",
-    "StockX Profile": "https://stockx.com/{}",
-    "Vinted Profile": "https://www.vinted.fr/member/{}",
-    "Kleinanzeigen Pro": "https://www.kleinanzeigen.de/pro/{}",
-    "Craigslist User": "https://{}.craigslist.org",
-    "Carousell": "https://www.carousell.com.my/u/{}",
-    "Olx": "https://www.olx.ro/d/oferent/{}",
-    "Gumtree": "https://www.gumtree.com/p/s?userId={}",
-    "OfferUp": "https://offerup.com/p/{}",
-    "Calendly": "https://calendly.com/{}",
-    "Eventbrite Organizer": "https://www.eventbrite.com/o/{}",
-    "Meetup": "https://www.meetup.com/members/{}",
-    "Couchsurfing Profile": "https://www.couchsurfing.com/people/{}",
-    "Airbnb": "https://www.airbnb.com/users/show/{}",
-    "TripAdvisor Profile": "https://www.tripadvisor.com/members/{}",
-    "Yelp Profile": "https://www.yelp.com/user_details?userid={}",
-    "Foursquare Profile": "https://foursquare.com/{}",
-    "Zomato": "https://www.zomato.com/{}",
-    "DoorDash": "https://www.doordash.com/",
-    "UberEats": "https://www.ubereats.com/",
-    "Grubhub": "https://www.grubhub.com/",
-    "Instacart": "https://www.instacart.com/",
-    "TaskRabbit Profile": "https://www.taskrabbit.com/",
-    "Thumbtack": "https://www.thumbtack.com/",
-    "Houzz Profile": "https://www.houzz.com/pro/{}",
-    "YellowPages": "https://www.yellowpages.com/",
-    "WhitePages": "https://www.whitepages.com/name/{}",
-    "TruePeopleSearch": "https://www.truepeoplesearch.com/",
-    "FastPeopleSearch": "https://www.fastpeoplesearch.com/",
-    "Spokeo": "https://www.spokeo.com/{}",
-    "BeenVerified": "https://www.beenverified.com/",
-    "Intelius": "https://www.intelius.com/",
-    "Radaris": "https://radaris.com/p/{}",
-    "PeopleFinder": "https://www.peoplefinder.com/",
-    "Classmates": "https://www.classmates.com/siteui/search/result?q={}",
-    "Ancestry": "https://www.ancestry.com/name-origin?surname={}",
-    "MyHeritage": "https://www.myheritage.com/",
-    "MyLife": "https://www.mylife.com/{}",
-    "ZoomInfo": "https://www.zoominfo.com/p/{}",
-    "RocketReach": "https://rocketreach.co/{}",
-    "Hunter.io": "https://hunter.io/",
-    "Apollo.io": "https://app.apollo.io/#/people/{}",
-    "SignalHire": "https://www.signalhire.com/",
-    "UpLead": "https://www.uplead.com/",
-    "Snov.io": "https://snov.io/",
-    "HubSpot": "https://hubspot.com/",
-    "Salesforce": "https://www.salesforce.com/",
-    "Pipedrive": "https://www.pipedrive.com/",
-    "Zoho CRM": "https://www.zoho.com/crm/"
+    "CD Projekt Red": "https://forums.cdprojektred.com/index.php?members/{}"
 }
 
-st.title("🕵️‍♂️ OSINT TERMINAL // STEALTH MODE (1000 TARGETS)")
-st.write(f"SYSTEM STATUS: ONLINE. Sichere Multithreading-Engine aktiv (gedrosselte Worker zum Schutz vor IP-Bans) für alle **{len(platforms)} Plattformen**.")
-
-username = st.text_input("GIB TARGET-BENUTZERNAMEN EIN:")
-
-def check_single_platform(name, url_template, user):
+# Robuste Prüffunktion mit Soft-404-Erkennung und Browser-Headern
+def check_platform_robust(url, username):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
     try:
-        # Robuste Behandlung für unterschiedliche Platzhalter-Stile
-        if "{1}" in url_template or "{2}" in url_template:
-            url = url_template.format(user, user, user)
-        elif "{}" in url_template:
-            count = url_template.count("{}")
-            url = url_template.format(*[user] * count)
-        elif "{0}" in url_template:
-            url = url_template.format(user)
-        else:
-            # Falls kein Platzhalter existiert, direkt prüfen
-            url = url_template
-    except Exception:
-        return name, None, False
-
-    req = urllib.request.Request(
-        url, 
-        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    )
-    try:
-        response = urllib.request.urlopen(req, timeout=3.0)
-        if response.status == 200:
-            return name, url, True
-    except Exception:
-        pass
-    return name, None, False
-
-if st.button("SICHEREN SCAN STARTEN"):
-    if username.strip() == "":
-        st.warning("FEHLER: Kein Benutzername eingegeben!")
-    else:
-        st.info(f"Initialisiere Stealth-Scan für Target: **{username}** (1000 Ziele)...")
+        # Multi-Placeholder-Auflösung (falls {} mehrfach vorkommt)
+        target_url = url.format(username, username) if url.count('{}') > 1 else url.format(username)
         
+        response = requests.get(target_url, headers=headers, timeout=5, allow_redirects=True)
+        
+        if response.status_code != 200:
+            return False
+            
+        page_text = response.text.lower()
+        not_found_indicators = [
+            "not found", "does not exist", "user not found", "account not found",
+            "seite nicht gefunden", "konto existiert nicht", "profil wurde nicht gefunden",
+            "dieses profil ist leider nicht verfügbar", "error 404", "ungültiger benutzer"
+        ]
+        
+        for indicator in not_found_indicators:
+            if indicator in page_text:
+                return False
+                
+        return True
+    except requests.exceptions.RequestException:
+        return False
+
+# --- Streamlit Benutzeroberfläche ---
+st.title("🛡️ Stealth OSINT Scanner")
+st.markdown("Durchsuche hunderte Plattformen nach einem Benutzernamen mit robuster Filterung.")
+
+username_input = st.text_input("Benutzername eingeben:")
+
+if st.button("Scan starten"):
+    if not username_input.strip():
+        st.warning("Bitte gib einen gültigen Benutzernamen ein.")
+    else:
+        st.info(f"Scanne Plattformen für: **{username_input}** ...")
+        
+        valid_results = []
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        found_count = 0
         total_platforms = len(platforms)
         completed = 0
-        start_time = time.time()
         
-        # Sicherer Wert (max_workers=12) – blockt keine IPs, schützt vor Rate-Limits
+        def worker(item):
+            name, url_template = item
+            is_valid = check_platform_robust(url_template, username_input)
+            resolved_url = url_template.format(username_input, username_input) if url_template.count('{}') > 1 else url_template.format(username_input)
+            return (name, resolved_url, is_valid)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
-            future_to_platform = {
-                executor.submit(check_single_platform, name, templ, username): name 
-                for name, templ in platforms.items()
-            }
+            futures = [executor.submit(worker, item) for item in platforms.items()]
             
-            for future in concurrent.futures.as_completed(future_to_platform):
+            for future in concurrent.futures.as_completed(futures):
                 completed += 1
-                name, url, found = future.result()
-                
                 progress_bar.progress(completed / total_platforms)
-                elapsed_time = time.time() - start_time
-                if completed > 0:
-                    avg_time = elapsed_time / completed
-                    remaining_items = total_platforms - completed
-                    est_time = avg_time * remaining_items
-                else:
-                    est_time = 0
-                    
-                status_text.text(f">> STEALTH [{completed}/{total_platforms}] | Verstrichen: {elapsed_time:.1f}s | ETA: {est_time:.1f}s")
+                status_text.text(f"Fortschritt: {completed}/{total_platforms} Plattformen geprüft...")
                 
-                if found and url:
-                    st.success(f"[TREFFER] Gefunden auf **{name}**: {url}")
-                    found_count += 1
-            
-        total_duration = time.time() - start_time
+                name, resolved_url, is_valid = future.result()
+                if is_valid:
+                    valid_results.append((name, resolved_url))
+
         status_text.empty()
-        progress_bar.progress(1.0)
-        st.write("---")
-        st.success(f"⚡ STEALTH-SCAN BEENDET in **{total_duration:.1f} Sekunden**! Treffer auf **{found_count}** Plattformen verifiziert.")
+        progress_bar.empty()
+        
+        st.success(f"Scan beendet! {len(valid_results)} valide Profile gefunden.")
+        
+        if valid_results:
+            for name, url in valid_results:
+                st.markdown(f"- **{name}**: [{url}]({url})")
+        else:
+            st.info("Keine aktiven Profile gefunden.")
