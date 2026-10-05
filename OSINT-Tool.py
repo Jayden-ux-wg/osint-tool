@@ -7,15 +7,9 @@ import csv
 import random
 import re
 import time
+import concurrent.futures
 from urllib.parse import quote
 from datetime import datetime
-
-# --- NEST_ASYNCIO INTEGRATION (BEHEBT DAS HÄNGENBLEIBEN) ---
-try:
-    import nest_asyncio
-    nest_asyncio.apply()
-except ImportError:
-    pass
 
 # --- STREAMLIT PAGE CONFIG ---
 st.set_page_config(
@@ -43,7 +37,7 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
 ]
 
-# --- 100+ EXTENDED PLATFORM DATABASE ---
+# --- PLATFORM DATABASE ---
 PLATFORMS_DB = {
     "Social & Networks": {
         "GitHub": "https://github.com/{}",
@@ -107,7 +101,7 @@ PLATFORMS_DB = {
     }
 }
 
-# --- DEEP REGEX ENTITY SCRAPER ---
+# --- METADATEN-EXTRAKTION ---
 def extract_deep_entities(html_text):
     metadata = {"title": None, "description": None, "image": None, "btc_wallets": [], "eth_wallets": [], "emails": []}
     
@@ -124,7 +118,6 @@ def extract_deep_entities(html_text):
     if img_match:
         metadata["image"] = img_match.group(1).strip()
 
-    # ENTITY REGEX EXTRACTION
     metadata["btc_wallets"] = list(set(re.findall(r'\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b', html_text)))
     metadata["eth_wallets"] = list(set(re.findall(r'\b0x[a-fA-F0-9]{40}\b', html_text)))
     metadata["emails"] = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html_text)))
@@ -158,20 +151,33 @@ async def fetch_platform(session, name, category, url_template, query, timeout_s
     except Exception:
         return {"name": name, "category": category, "url": target_url, "status": "ERROR"}
 
-async def run_osint_scan(targets, query, max_concurrent, timeout_sec, progress_bar, status_text, proxy_url):
+async def run_osint_scan(targets, query, max_concurrent, timeout_sec, proxy_url):
     connector = aiohttp.TCPConnector(limit=max_concurrent, ssl=False)
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = [fetch_platform(session, name, cat, url, query, timeout_sec, proxy_url) for name, cat, url in targets]
-        results = []
-        total = len(tasks)
-        completed = 0
-        for f in asyncio.as_completed(tasks):
-            res = await f
-            results.append(res)
-            completed += 1
-            progress_bar.progress(completed / total)
-            status_text.text(f"Scanne Plattformen: {completed}/{total}...")
-        return results
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        clean_results = []
+        for res in results:
+            if isinstance(res, dict):
+                clean_results.append(res)
+            else:
+                clean_results.append({"name": "Unbekannt", "category": "Error", "url": "", "status": "ERROR"})
+        return clean_results
+
+def execute_async_in_thread(coro):
+    """Führt eine Async Koroutine isoliert in einem neuen Thread mit eigenem Event-Loop aus."""
+    def worker():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(worker)
+        return future.result()
 
 # --- INITIALISIERUNG ---
 if "scan_results" not in st.session_state:
@@ -184,121 +190,4 @@ proxy_input = st.sidebar.text_input("Optional Proxy (z.B. http://proxy:8080):", 
 max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=30, value=15)
 request_timeout = st.sidebar.slider("Timeout (Sek.)", min_value=2, max_value=10, value=4)
 
-active_targets = []
-for cat in selected_categories:
-    for name, url in PLATFORMS_DB[cat].items():
-        active_targets.append((name, cat, url))
-
-st.title("⚡ Stealth OSINT Engine v6.0 Ultimate")
-st.markdown("Advanced Multi-Target Intelligence Dashboard & Deep Entity Extraction.")
-
-raw_input = st.text_input("Ziel-Benutzername oder E-Mails (kommagetrennt für Massen-Scan):", placeholder="z.B. alex123, target@domain.com")
-start_scan = st.button("🚀 Ultimate Scan Starten")
-
-if start_scan:
-    if not raw_input.strip():
-        st.warning("Bitte ein Ziel eingeben.")
-    else:
-        targets_list = [t.strip() for t in raw_input.split(",") if t.strip()]
-        all_results = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        start_time = time.time()
-        
-        # SICHERE EVENT-LOOP-ABFRAGE FÜR STREAMLIT CLOUD
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        for t in targets_list:
-            search_handle = t.split('@')[0] if "@" in t else t
-            res = loop.run_until_complete(
-                run_osint_scan(active_targets, search_handle, max_threads, request_timeout, progress_bar, status_text, proxy_input if proxy_input else None)
-            )
-            all_results.extend(res)
-        
-        st.session_state["scan_results"] = all_results
-        st.session_state["scan_time"] = round(time.time() - start_time, 2)
-        progress_bar.empty()
-        status_text.empty()
-        st.success(f"Scan in {st.session_state['scan_time']}s erfolgreich beendet!")
-
-if st.session_state["scan_results"]:
-    results = st.session_state["scan_results"]
-    found_list = [r for r in results if r["status"] == "FOUND"]
-    blocked_list = [r for r in results if r["status"] == "BLOCKED"]
-    
-    # EXPOSURE SCORE CALCULATION
-    score = min(100, len(found_list) * 8)
-    
-    st.markdown("---")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("✅ Treffer", len(found_list))
-    m2.metric("⚠️ Geblockt", len(blocked_list))
-    m3.metric("🎯 Digital Exposure Score", f"{score}/100")
-    m4.metric("⏱️ Scan-Zeit", f"{st.session_state.get('scan_time', 0)}s")
-
-    tab_found, tab_dorks, tab_export = st.tabs(["🎯 Profil-Karten & Meta-Daten", "🔎 Multi-Engine Dorks", "💾 Report Export"])
-
-    with tab_found:
-        filter_text = st.text_input("🔍 Ergebnisse live filtern:", "")
-        for item in found_list:
-            if filter_text.lower() in item["name"].lower() or filter_text.lower() in item["url"].lower():
-                meta = item.get("metadata", {})
-                st.markdown(f"### [{item['category']}] {item['name']}")
-                col_img, col_info = st.columns([1, 4])
-                with col_img:
-                    if meta.get("image"):
-                        st.image(meta["image"], width=100)
-                    else:
-                        st.write("📷 Kein Bild")
-                with col_info:
-                    st.markdown(f"🔗 **URL:** [{item['url']}]({item['url']})")
-                    if meta.get("title"):
-                        st.markdown(f"**Titel:** {meta['title']}")
-                    if meta.get("description"):
-                        st.markdown(f"**Bio:** _{meta['description']}_")
-                    if meta.get("emails"):
-                        st.markdown(f"📧 **Gefundene E-Mails:** {', '.join(meta['emails'])}")
-                    if meta.get("btc_wallets"):
-                        st.markdown(f"🪙 **Bitcoin Wallets:** {', '.join(meta['btc_wallets'])}")
-                    if meta.get("eth_wallets"):
-                        st.markdown(f"🌐 **Ethereum Wallets:** {', '.join(meta['eth_wallets'])}")
-                st.markdown("---")
-
-    with tab_dorks:
-        st.markdown("### Multi-Engine Dork Generator")
-        q_enc = quote(raw_input)
-        st.markdown(f"- 🔎 **Google Deep Search:** [Google Suche](https://www.google.com/search?q=%22{q_enc}%22)")
-        st.markdown(f"- 🦆 **DuckDuckGo Leaks:** [DuckDuckGo Suche](https://duckduckgo.com/?q=%22{q_enc}%22+filetype%3Apdf)")
-        st.markdown(f"- 🌐 **Yandex Global Search:** [Yandex Suche](https://yandex.com/search/?text=%22{q_enc}%22)")
-
-    with tab_export:
-        col_csv, col_json = st.columns(2)
-        
-        # CSV Export
-        csv_buffer = io.StringIO()
-        writer = csv.writer(csv_buffer)
-        writer.writerow(["Name", "Kategorie", "Status", "URL", "Titel", "Description"])
-        for r in results:
-            meta = r.get("metadata", {})
-            writer.writerow([r["name"], r["category"], r["status"], r["url"], meta.get("title"), meta.get("description")])
-            
-        col_csv.download_button(
-            label="📄 CSV herunterladen",
-            data=csv_buffer.getvalue(),
-            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
-        
-        # JSON Export
-        json_data = json.dumps(results, indent=2, ensure_ascii=False)
-        col_json.download_button(
-            label="📦 JSON herunterladen",
-            data=json_data,
-            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.json",
-            mime="application/json"
-        )
+active_targets =
