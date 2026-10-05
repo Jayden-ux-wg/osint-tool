@@ -194,3 +194,115 @@ active_targets = []
 for cat in selected_categories:
     for name, url in PLATFORMS_DB[cat].items():
         active_targets.append((name, cat, url))
+
+st.title("⚡ Stealth OSINT Engine v6.0 Ultimate")
+st.markdown("Advanced Multi-Target Intelligence Dashboard & Deep Entity Extraction.")
+
+raw_input = st.text_input("Ziel-Benutzername oder E-Mails (kommagetrennt für Massen-Scan):", placeholder="z.B. alex123, target@domain.com")
+start_scan = st.button("🚀 Ultimate Scan Starten")
+
+if start_scan:
+    if not raw_input.strip():
+        st.warning("Bitte ein Ziel eingeben.")
+    else:
+        targets_list = [t.strip() for t in raw_input.split(",") if t.strip()]
+        all_results = []
+        
+        with st.spinner("Scanne Plattformen im Hintergrund... Bitte warten..."):
+            start_time = time.time()
+
+            for t in targets_list:
+                search_handle = t.split('@')[0] if "@" in t else t
+                
+                # Absturzsichere Ausführung im separaten Thread
+                res = execute_async_in_thread(
+                    run_osint_scan(
+                        active_targets, 
+                        search_handle, 
+                        max_threads, 
+                        request_timeout, 
+                        proxy_input if proxy_input else None
+                    )
+                )
+                all_results.extend(res)
+            
+            st.session_state["scan_results"] = all_results
+            st.session_state["scan_time"] = round(time.time() - start_time, 2)
+        
+        st.success(f"Scan in {st.session_state['scan_time']}s erfolgreich beendet!")
+
+if st.session_state["scan_results"]:
+    results = st.session_state["scan_results"]
+    found_list = [r for r in results if r["status"] == "FOUND"]
+    blocked_list = [r for r in results if r["status"] == "BLOCKED"]
+    
+    score = min(100, len(found_list) * 8)
+    
+    st.markdown("---")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("✅ Treffer", len(found_list))
+    m2.metric("⚠️ Geblockt", len(blocked_list))
+    m3.metric("🎯 Digital Exposure Score", f"{score}/100")
+    m4.metric("⏱️ Scan-Zeit", f"{st.session_state.get('scan_time', 0)}s")
+
+    tab_found, tab_dorks, tab_export = st.tabs(["🎯 Profil-Karten & Meta-Daten", "🔎 Multi-Engine Dorks", "💾 Report Export"])
+
+    with tab_found:
+        filter_text = st.text_input("🔍 Ergebnisse live filtern:", "")
+        for item in found_list:
+            if filter_text.lower() in item["name"].lower() or filter_text.lower() in item["url"].lower():
+                meta = item.get("metadata", {})
+                st.markdown(f"### [{item['category']}] {item['name']}")
+                col_img, col_info = st.columns([1, 4])
+                with col_img:
+                    if meta.get("image"):
+                        st.image(meta["image"], width=100)
+                    else:
+                        st.write("📷 Kein Bild")
+                with col_info:
+                    st.markdown(f"🔗 **URL:** [{item['url']}]({item['url']})")
+                    if meta.get("title"):
+                        st.markdown(f"**Titel:** {meta['title']}")
+                    if meta.get("description"):
+                        st.markdown(f"**Bio:** _{meta['description']}_")
+                    if meta.get("emails"):
+                        st.markdown(f"📧 **Gefundene E-Mails:** {', '.join(meta['emails'])}")
+                    if meta.get("btc_wallets"):
+                        st.markdown(f"🪙 **Bitcoin Wallets:** {', '.join(meta['btc_wallets'])}")
+                    if meta.get("eth_wallets"):
+                        st.markdown(f"🌐 **Ethereum Wallets:** {', '.join(meta['eth_wallets'])}")
+                st.markdown("---")
+
+    with tab_dorks:
+        st.markdown("### Multi-Engine Dork Generator")
+        q_enc = quote(raw_input)
+        st.markdown(f"- 🔎 **Google Deep Search:** [Google Suche](https://www.google.com/search?q=%22{q_enc}%22)")
+        st.markdown(f"- 🦆 **DuckDuckGo Leaks:** [DuckDuckGo Suche](https://duckduckgo.com/?q=%22{q_enc}%22+filetype%3Apdf)")
+        st.markdown(f"- 🌐 **Yandex Global Search:** [Yandex Suche](https://yandex.com/search/?text=%22{q_enc}%22)")
+
+    with tab_export:
+        col_csv, col_json = st.columns(2)
+        
+        # CSV Export
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["Name", "Kategorie", "Status", "URL", "Titel", "Description"])
+        for r in results:
+            meta = r.get("metadata", {})
+            writer.writerow([r["name"], r["category"], r["status"], r["url"], meta.get("title"), meta.get("description")])
+            
+        col_csv.download_button(
+            label="📄 CSV herunterladen",
+            data=csv_buffer.getvalue(),
+            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+        
+        # JSON Export
+        json_data = json.dumps(results, indent=2, ensure_ascii=False)
+        col_json.download_button(
+            label="📦 JSON herunterladen",
+            data=json_data,
+            file_name=f"osint_v6_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json"
+        )
