@@ -190,4 +190,7 @@ proxy_input = st.sidebar.text_input("Optional Proxy (z.B. http://proxy:8080):", 
 max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=30, value=15)
 request_timeout = st.sidebar.slider("Timeout (Sek.)", min_value=2, max_value=10, value=4)
 
-active_targets =
+active_targets = []
+for cat in selected_categories:
+    for name, url in PLATFORMS_DB[cat].items():
+        active_targets.append((name, cat, url))
