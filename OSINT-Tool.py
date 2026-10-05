@@ -6,34 +6,34 @@ import io
 import csv
 import random
 import re
+import time
 from urllib.parse import quote
 from datetime import datetime
 
 # --- STREAMLIT PAGE CONFIG ---
 st.set_page_config(
-    page_title="Stealth OSINT Engine v4.0 Ultra",
-    page_icon="👁️",
+    page_title="Stealth OSINT Engine v5.0 Enterprise",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- DARK HACKER STYLING ---
+# --- DARK ENTERPRISE STYLING ---
 st.markdown("""
     <style>
-    .stApp { background-color: #080808; color: #00ff66; font-family: 'Courier New', Courier, monospace; }
-    h1, h2, h3 { color: #ff2a2a !important; font-family: 'Courier New', Courier, monospace; text-shadow: 0px 0px 8px rgba(255, 42, 42, 0.4); }
-    .stTextInput input { background-color: #121212; color: #00ff66; border: 1px solid #ff2a2a; font-family: 'Courier New', Courier, monospace; }
-    .stButton button { background: linear-gradient(45deg, #ff2a2a, #8b0000); color: white; font-weight: bold; border-radius: 4px; border: 1px solid #ff5555; width: 100%; padding: 0.6rem 1rem; }
-    .stButton button:hover { background: linear-gradient(45deg, #ff5555, #ff2a2a); color: #fff; border: 1px solid #00ff66; box-shadow: 0 0 10px rgba(0, 255, 102, 0.5); }
-    div[data-testid="stMetricValue"] { color: #00ff66 !important; font-family: 'Courier New', Courier, monospace; }
-    .profile-card { background-color: #121212; border: 1px solid #00ff66; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
+    .stApp { background-color: #0a0c10; color: #00ff88; font-family: 'JetBrains Mono', 'Courier New', monospace; }
+    h1, h2, h3 { color: #ff3366 !important; font-family: 'JetBrains Mono', monospace; text-shadow: 0px 0px 10px rgba(255, 51, 102, 0.4); }
+    .stTextInput input { background-color: #12161f; color: #00ff88; border: 1px solid #ff3366; font-family: monospace; }
+    .stButton button { background: linear-gradient(45deg, #ff3366, #990033); color: white; font-weight: bold; border-radius: 4px; border: 1px solid #ff6688; width: 100%; padding: 0.6rem 1rem; }
+    .stButton button:hover { background: linear-gradient(45deg, #ff6688, #ff3366); color: #fff; box-shadow: 0 0 12px rgba(0, 255, 136, 0.4); }
+    div[data-testid="stMetricValue"] { color: #00ff88 !important; font-family: monospace; }
     </style>
 """, unsafe_allow_html=True)
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0"
 ]
 
 PLATFORMS_DB = {
@@ -48,7 +48,10 @@ PLATFORMS_DB = {
         "Pinterest": "https://pinterest.com/{}",
         "Mastodon": "https://mastodon.social/@{}",
         "Medium": "https://medium.com/@{}",
-        "Linktree": "https://linktr.ee/{}"
+        "Linktree": "https://linktr.ee/{}",
+        "Tumblr": "https://{}.tumblr.com",
+        "Patreon": "https://www.patreon.com/{}",
+        "Keybase": "https://keybase.io/{}"
     },
     "Gaming & Esports": {
         "Steam": "https://steamcommunity.com/id/{}",
@@ -56,7 +59,10 @@ PLATFORMS_DB = {
         "Kick": "https://kick.com/{}",
         "Chess.com": "https://www.chess.com/member/{}",
         "Lichess": "https://lichess.org/@/{}",
-        "Speedrun.com": "https://www.speedrun.com/user/{}"
+        "Speedrun.com": "https://www.speedrun.com/user/{}",
+        "Roblox": "https://www.roblox.com/user.aspx?username={}",
+        "Duolingo": "https://www.duolingo.com/profile/{}",
+        "NameMC (Minecraft)": "https://namemc.com/profile/{}"
     },
     "Developer & Tech": {
         "GitLab": "https://gitlab.com/{}",
@@ -64,44 +70,45 @@ PLATFORMS_DB = {
         "Replit": "https://replit.com/@{}",
         "Docker Hub": "https://hub.docker.com/u/{}",
         "Npmjs": "https://www.npmjs.com/~{}",
-        "PyPI": "https://pypi.org/user/{}"
+        "PyPI": "https://pypi.org/user/{}",
+        "CodePen": "https://codepen.io/{}",
+        "HackerNews": "https://news.ycombinator.com/user?id={}",
+        "SourceForge": "https://sourceforge.net/u/{}"
     },
     "Media & Creative": {
         "Spotify": "https://open.spotify.com/user/{}",
         "SoundCloud": "https://soundcloud.com/{}",
         "YouTube": "https://www.youtube.com/@{}",
         "DeviantArt": "https://www.deviantart.com/{}",
-        "Bandcamp": "https://bandcamp.com/{}"
+        "Bandcamp": "https://bandcamp.com/{}",
+        "Vimeo": "https://vimeo.com/{}",
+        "Flickr": "https://www.flickr.com/people/{}"
     }
 }
 
-# --- METADATEN SCRAPER (OpenGraph / HTML Meta Tags) ---
 def extract_metadata(html_text):
     metadata = {"title": None, "description": None, "image": None}
     
-    # Title extrahieren
     title_match = re.search(r'<title>(.*?)</title>', html_text, re.IGNORECASE)
     if title_match:
         metadata["title"] = title_match.group(1).strip()
         
-    # OpenGraph Description
     desc_match = re.search(r'<meta\s+property=["\']og:description["\']\s+content=["\'](.*?)["\']', html_text, re.IGNORECASE) or \
                  re.search(r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']', html_text, re.IGNORECASE)
     if desc_match:
         metadata["description"] = desc_match.group(1).strip()
         
-    # OpenGraph Image (Profilbild)
     img_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\'](.*?)["\']', html_text, re.IGNORECASE)
     if img_match:
         metadata["image"] = img_match.group(1).strip()
         
     return metadata
 
-# --- ASYNC CHECKER MIT DEEP SCRAPING ---
 async def fetch_platform(session, name, category, url_template, query, timeout_sec):
     target_url = url_template.format(query)
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
     }
     
@@ -121,9 +128,7 @@ async def fetch_platform(session, name, category, url_template, query, timeout_s
                     if indicator in page_text:
                         return {"name": name, "category": category, "url": target_url, "status": "NOT_FOUND"}
                 
-                # METADATEN EXTRAHIEREN (Deep OSINT)
                 meta = extract_metadata(text)
-                
                 return {
                     "name": name, 
                     "category": category, 
@@ -144,7 +149,6 @@ async def fetch_platform(session, name, category, url_template, query, timeout_s
     except Exception:
         return {"name": name, "category": category, "url": target_url, "status": "ERROR", "code": "Exception"}
 
-# --- ENGINE LOGIK ---
 async def run_osint_scan(targets, query, max_concurrent, timeout_sec, progress_bar, status_text):
     connector = aiohttp.TCPConnector(limit=max_concurrent)
     async with aiohttp.ClientSession(connector=connector) as session:
@@ -169,17 +173,16 @@ async def run_osint_scan(targets, query, max_concurrent, timeout_sec, progress_b
 # --- INITIALISIERUNG ---
 if "scan_results" not in st.session_state:
     st.session_state["scan_results"] = None
-if "scanned_query" not in st.session_state:
-    st.session_state["scanned_query"] = ""
+if "scan_time" not in st.session_state:
+    st.session_state["scan_time"] = 0.0
 
-# --- SIDEBAR EINSTELLUNGEN ---
-st.sidebar.title("⚙️ Engine Konfiguration")
-selected_categories = st.sidebar.multiselect("Kategorien auswählen:", options=list(PLATFORMS_DB.keys()), default=list(PLATFORMS_DB.keys()))
+st.sidebar.title("⚡ Engine Config")
+selected_categories = st.sidebar.multiselect("Kategorien:", options=list(PLATFORMS_DB.keys()), default=list(PLATFORMS_DB.keys()))
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🚀 Performance Settings")
-max_threads = st.sidebar.slider("Parallel Verbindungen", min_value=5, max_value=50, value=20)
-request_timeout = st.sidebar.slider("Timeout (Sekunden)", min_value=2, max_value=15, value=5)
+st.sidebar.subheader("🚀 Performance")
+max_threads = st.sidebar.slider("Parallel-Verbindungen", min_value=5, max_value=50, value=25)
+request_timeout = st.sidebar.slider("Timeout (Sek.)", min_value=2, max_value=15, value=5)
 
 active_targets = []
 for cat in selected_categories:
@@ -187,38 +190,38 @@ for cat in selected_categories:
         active_targets.append((name, cat, url))
 
 # --- MAIN UI ---
-st.title("👁️ Stealth OSINT Engine v4.0 Ultra")
-st.markdown("Advanced Reconnaissance mit Deep-Metadata Extraction & Smart Input Routing.")
+st.title("⚡ Stealth OSINT Engine v5.0 Enterprise")
+st.markdown("Hochleistungs-Recherche mit Deep-Metadata Extraction & Multi-Format Export.")
 
 input_query = st.text_input("Ziel-Benutzername oder E-Mail eingeben:", placeholder="z.B. alex123 oder target@domain.com")
-start_scan = st.button("🔍 Ultra Scan Starten")
+start_scan = st.button("🚀 Enterprise Scan Starten")
 
-# SMART INPUT DETECTION
 is_email = "@" in input_query and "." in input_query
 clean_query = input_query.strip()
 
 if is_email:
-    st.info(f"💡 **E-Mail-Modus erkannt**: Nutze den Benutzernamen-Teil `{clean_query.split('@')[0]}` für Social-Media-Checks.")
     search_handle = clean_query.split('@')[0]
+    st.info(f"💡 **E-Mail-Modus**: Suchen werden mit dem Namenskürzel `{search_handle}` ausgeführt.")
 else:
     search_handle = clean_query
 
 if start_scan:
     if not clean_query:
-        st.warning("Bitte gib ein gültiges Target ein.")
+        st.warning("Bitte gib ein gültiges Ziel ein.")
     else:
-        st.session_state["scanned_query"] = clean_query
         progress_bar = st.progress(0)
         status_text = st.empty()
         
+        start_time = time.time()
         results = asyncio.run(run_osint_scan(active_targets, search_handle, max_threads, request_timeout, progress_bar, status_text))
+        end_time = time.time()
 
         progress_bar.empty()
         status_text.empty()
         st.session_state["scan_results"] = results
-        st.success("Deep Scan abgeschlossen!")
+        st.session_state["scan_time"] = round(end_time - start_time, 2)
+        st.success(f"Scan in {st.session_state['scan_time']} Sekunden abgeschlossen!")
 
-# --- RESULT DISPLAY ---
 if st.session_state["scan_results"]:
     results = st.session_state["scan_results"]
     found_list = [r for r in results if r["status"] == "FOUND"]
@@ -227,60 +230,57 @@ if st.session_state["scan_results"]:
     error_list = [r for r in results if r["status"] in ["ERROR", "TIMEOUT"]]
 
     st.markdown("---")
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("✅ Gefunden", len(found_list))
     m2.metric("⚠️ Geblockt", len(blocked_list))
     m3.metric("🚫 Nicht vorhanden", len(not_found_list))
-    m4.metric("❌ Fehler / Timeout", len(error_list))
+    m4.metric("❌ Fehler/Timeout", len(error_list))
+    m5.metric("⏱️ Laufzeit", f"{st.session_state['scan_time']}s")
 
     tab_found, tab_dorks, tab_blocked, tab_export = st.tabs([
         f"🎯 Profil-Karten ({len(found_list)})", 
         "🔎 Google OSINT Dorks",
         f"⚠️ Geblockt ({len(blocked_list)})", 
-        "💾 Export"
+        "💾 Export (CSV & JSON)"
     ])
 
-    # PROFIL KARTEN MIT METADATEN & BILDERN
     with tab_found:
         if found_list:
             for item in found_list:
                 meta = item.get("metadata", {})
-                
                 with st.container():
                     st.markdown(f"### [{item['category']}] {item['name']}")
                     col_img, col_info = st.columns([1, 4])
-                    
                     with col_img:
                         if meta.get("image"):
-                            st.image(meta["image"], width=100)
+                            st.image(meta["image"], width=110)
                         else:
-                            st.write("📷 Kein Bild")
-                            
+                            st.write("📷 Kein Profilbild")
                     with col_info:
                         if meta.get("title"):
                             st.markdown(f"**Titel:** {meta['title']}")
                         if meta.get("description"):
-                            st.markdown(f"**Bio/Info:** _{meta['description']}_")
+                            st.markdown(f"**Bio:** _{meta['description']}_")
                         st.markdown(f"🔗 **URL:** [{item['url']}]({item['url']})")
                     st.markdown("---")
         else:
-            st.write("Keine aktiven Profile gefunden.")
+            st.write("Keine Treffer gefunden.")
 
-    # GOOGLE DORKS GENERATOR
     with tab_dorks:
-        st.markdown("### Automatisierte Google OSINT Search Dorks")
-        st.write("Klicke auf die Links, um gezielte Deep-Web-Suchen nach dem Target durchzuführen:")
-        
+        st.markdown("### Automatische Google Search Dorks")
         q_enc = quote(clean_query)
-        st.markdown(f"- 📄 **Gefundene Dokumente (PDF/DOCX):** [Google Suche](https://www.google.com/search?q=site:*+%22{q_enc}%22+filetype:pdf+OR+filetype:docx)")
-        st.markdown(f"- 💬 **Foren- und Pastebin-Einträge:** [Google Suche](https://www.google.com/search?q=site:pastebin.com+OR+site:github.com+%22{q_enc}%22)")
-        st.markdown(f"- 📱 **Social Media Erwähnungen:** [Google Suche](https://www.google.com/search?q=%22{q_enc}%22+site:twitter.com+OR+site:instagram.com)")
+        st.markdown(f"- 📄 **Dokumente (PDF/DOCX):** [Google Suche](https://www.google.com/search?q=site:*+%22{q_enc}%22+filetype:pdf+OR+filetype:docx)")
+        st.markdown(f"- 💬 **Pastebin & Code-Leaks:** [Google Suche](https://www.google.com/search?q=site:pastebin.com+OR+site:github.com+%22{q_enc}%22)")
+        st.markdown(f"- 📱 **Social-Media-Erwähnungen:** [Google Suche](https://www.google.com/search?q=%22{q_enc}%22+site:twitter.com+OR+site:instagram.com)")
 
     with tab_blocked:
         for item in blocked_list:
-            st.markdown(f"- **{item['name']}** (Status {item.get('code')})")
+            st.markdown(f"- **{item['name']}** (HTTP-Code {item.get('code')})")
 
     with tab_export:
+        col_csv, col_json = st.columns(2)
+        
+        # CSV Export
         csv_buffer = io.StringIO()
         writer = csv.writer(csv_buffer)
         writer.writerow(["Name", "Kategorie", "Status", "URL", "Titel", "Description"])
@@ -288,9 +288,18 @@ if st.session_state["scan_results"]:
             meta = r.get("metadata", {})
             writer.writerow([r["name"], r["category"], r["status"], r["url"], meta.get("title"), meta.get("description")])
             
-        st.download_button(
-            label="📄 Als erweitertes CSV herunterladen",
+        col_csv.download_button(
+            label="📄 CSV herunterladen",
             data=csv_buffer.getvalue(),
-            file_name=f"ultra_osint_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"osint_v5_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv"
+        )
+        
+        # JSON Export
+        json_data = json.dumps(results, indent=2, ensure_ascii=False)
+        col_json.download_button(
+            label="📦 JSON herunterladen",
+            data=json_data,
+            file_name=f"osint_v5_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json"
         )
